@@ -1,0 +1,413 @@
+import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { openaiChat, openaiJSON } from "./openai.server";
+
+// ---------------- Notes generation ----------------
+const NotesSchema = {
+  name: "notes",
+  schema: {
+    type: "object",
+    properties: {
+      summary: { type: "string" },
+      content: { type: "string", description: "Detailed markdown notes with examples" },
+      key_points: { type: "array", items: { type: "string" }, minItems: 4, maxItems: 10 },
+      flashcards: {
+        type: "array",
+        minItems: 5,
+        maxItems: 12,
+        items: {
+          type: "object",
+          properties: {
+            q: { type: "string" },
+            a: { type: "string" },
+          },
+          required: ["q", "a"],
+        },
+      },
+    },
+    required: ["summary", "content", "key_points", "flashcards"],
+  },
+} as const;
+
+type NotesResult = {
+  summary: string;
+  content: string;
+  key_points: string[];
+  flashcards: { q: string; a: string }[];
+};
+
+export const generateNotes = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { topic: string; level: "beginner" | "intermediate" | "advanced" }) =>
+    z
+      .object({ topic: z.string().min(2).max(200), level: z.enum(["beginner", "intermediate", "advanced"]) })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const result = await openaiJSON<NotesResult>({
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are an expert tutor. Generate clear, accurate study material as JSON. Use markdown in 'content' (headings, lists, code blocks where helpful). Tailor depth to the requested level.",
+        },
+        {
+          role: "user",
+          content: `Topic: ${data.topic}\nLevel: ${data.level}\nProduce summary, detailed notes, key points, and flashcards.`,
+        },
+      ],
+      schema: NotesSchema,
+    });
+
+    const { supabase, userId } = context;
+    const { data: row, error } = await supabase
+      .from("notes")
+      .insert({
+        user_id: userId,
+        topic: data.topic,
+        level: data.level,
+        summary: result.summary,
+        content: result.content,
+        key_points: result.key_points,
+        flashcards: result.flashcards,
+      })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    await supabase.from("performance_events").insert({
+      user_id: userId,
+      topic: data.topic,
+      event_type: "notes_generated",
+    });
+    return row;
+  });
+
+// ---------------- Quiz generation ----------------
+const QuizSchema = {
+  name: "quiz",
+  schema: {
+    type: "object",
+    properties: {
+      questions: {
+        type: "array",
+        minItems: 5,
+        maxItems: 15,
+        items: {
+          type: "object",
+          properties: {
+            q: { type: "string" },
+            choices: { type: "array", items: { type: "string" }, minItems: 4, maxItems: 4 },
+            answer_index: { type: "integer", minimum: 0, maximum: 3 },
+            explanation: { type: "string" },
+            subtopic: { type: "string" },
+          },
+          required: ["q", "choices", "answer_index", "explanation", "subtopic"],
+        },
+      },
+    },
+    required: ["questions"],
+  },
+} as const;
+
+type QuizQ = { q: string; choices: string[]; answer_index: number; explanation: string; subtopic: string };
+
+export const generateQuiz = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (d: {
+      subject: string;
+      topic: string;
+      difficulty: "easy" | "medium" | "hard";
+      count: number;
+    }) =>
+      z
+        .object({
+          subject: z.string().min(2).max(80),
+          topic: z.string().min(2).max(120),
+          difficulty: z.enum(["easy", "medium", "hard"]),
+          count: z.number().int().min(5).max(15),
+        })
+        .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const result = await openaiJSON<{ questions: QuizQ[] }>({
+      messages: [
+        {
+          role: "system",
+          content:
+            "You generate high-quality multiple-choice quizzes. Each question must have exactly 4 distinct, plausible choices, one correct answer (0-indexed), an explanation, and a tagged subtopic.",
+        },
+        {
+          role: "user",
+          content: `Subject: ${data.subject}\nTopic: ${data.topic}\nDifficulty: ${data.difficulty}\nCount: ${data.count}\nReturn JSON.`,
+        },
+      ],
+      schema: QuizSchema,
+    });
+
+    const { supabase, userId } = context;
+    const { data: row, error } = await supabase
+      .from("quizzes")
+      .insert({
+        owner_id: userId,
+        title: `${data.topic} (${data.difficulty})`,
+        subject: data.subject,
+        topic: data.topic,
+        difficulty: data.difficulty,
+        questions: result.questions,
+      })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return row;
+  });
+
+// ---------------- Quiz evaluation ----------------
+export const submitQuiz = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { quizId: string; answers: number[]; durationSeconds: number }) =>
+    z
+      .object({
+        quizId: z.string().uuid(),
+        answers: z.array(z.number().int()),
+        durationSeconds: z.number().int().min(0).max(60 * 60 * 4),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: quiz, error } = await supabase
+      .from("quizzes")
+      .select("id, subject, topic, difficulty, questions")
+      .eq("id", data.quizId)
+      .single();
+    if (error || !quiz) throw new Error("Quiz not found");
+
+    const questions = (quiz.questions as unknown as QuizQ[]) ?? [];
+    let score = 0;
+    const wrongSubtopics: Record<string, number> = {};
+    const perQ = questions.map((q, i) => {
+      const correct = data.answers[i] === q.answer_index;
+      if (correct) score += 1;
+      else wrongSubtopics[q.subtopic] = (wrongSubtopics[q.subtopic] ?? 0) + 1;
+      return { i, correct, given: data.answers[i], answer: q.answer_index };
+    });
+    const weakTopics = Object.entries(wrongSubtopics)
+      .sort((a, b) => b[1] - a[1])
+      .map(([topic, count]) => ({ topic, count }));
+
+    let feedback = "Great job!";
+    try {
+      feedback = await openaiChat({
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a kind, concise tutor. In 3-5 sentences, give the student feedback based on their quiz result. Mention which subtopics to revise.",
+          },
+          {
+            role: "user",
+            content: `Subject: ${quiz.subject}, Topic: ${quiz.topic}, Score: ${score}/${questions.length}. Weak subtopics: ${JSON.stringify(weakTopics)}.`,
+          },
+        ],
+        temperature: 0.6,
+      });
+    } catch {
+      // ignore feedback errors
+    }
+
+    const { data: attempt, error: aerr } = await supabase
+      .from("quiz_attempts")
+      .insert({
+        user_id: userId,
+        quiz_id: data.quizId,
+        score,
+        total: questions.length,
+        answers: perQ,
+        weak_topics: weakTopics,
+        feedback,
+        duration_seconds: data.durationSeconds,
+      })
+      .select()
+      .single();
+    if (aerr) throw new Error(aerr.message);
+
+    await supabase.from("performance_events").insert({
+      user_id: userId,
+      subject: quiz.subject,
+      topic: quiz.topic,
+      event_type: "quiz_attempt",
+      accuracy: questions.length ? score / questions.length : 0,
+      duration_seconds: data.durationSeconds,
+    });
+
+    // Award XP and badges
+    const xpGained = Math.round((score / Math.max(1, questions.length)) * 100);
+    const { data: prof } = await supabase
+      .from("profiles")
+      .select("xp")
+      .eq("user_id", userId)
+      .single();
+    await supabase
+      .from("profiles")
+      .update({ xp: (prof?.xp ?? 0) + xpGained, last_active: new Date().toISOString().slice(0, 10) })
+      .eq("user_id", userId);
+
+    // First quiz badge
+    const { data: badge } = await supabase.from("badges").select("id").eq("code", "first_quiz").single();
+    if (badge) {
+      await supabase.from("user_badges").insert({ user_id: userId, badge_id: badge.id }).select();
+    }
+
+    return { attempt, perQ, weakTopics, feedback, xpGained };
+  });
+
+// ---------------- Study plan ----------------
+const PlanSchema = {
+  name: "plan",
+  schema: {
+    type: "object",
+    properties: {
+      title: { type: "string" },
+      days: {
+        type: "array",
+        minItems: 7,
+        maxItems: 7,
+        items: {
+          type: "object",
+          properties: {
+            day: { type: "string" },
+            focus: { type: "string" },
+            tasks: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 5 },
+            estimate_minutes: { type: "integer", minimum: 15, maximum: 240 },
+          },
+          required: ["day", "focus", "tasks", "estimate_minutes"],
+        },
+      },
+    },
+    required: ["title", "days"],
+  },
+} as const;
+
+type PlanResult = {
+  title: string;
+  days: { day: string; focus: string; tasks: string[]; estimate_minutes: number }[];
+};
+
+export const generateStudyPlan = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { goal: string }) => z.object({ goal: z.string().min(3).max(300) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const [{ data: prof }, { data: events }] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("learning_style, interests, goals")
+        .eq("user_id", userId)
+        .single(),
+      supabase
+        .from("performance_events")
+        .select("subject, topic, accuracy, event_type, created_at")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(50),
+    ]);
+
+    const ctxStr = JSON.stringify({ profile: prof, recent: events });
+
+    const result = await openaiJSON<PlanResult>({
+      messages: [
+        {
+          role: "system",
+          content:
+            "You design personalized 7-day study plans. Use the student's learning style and weak topics. Days labeled Mon..Sun. Tasks are concrete and tailored.",
+        },
+        { role: "user", content: `Goal: ${data.goal}\nContext: ${ctxStr}\nReturn JSON.` },
+      ],
+      schema: PlanSchema,
+    });
+
+    // Deactivate previous plans, then insert new
+    await supabase.from("study_plans").update({ is_active: false }).eq("user_id", userId).eq("is_active", true);
+    const { data: row, error } = await supabase
+      .from("study_plans")
+      .insert({ user_id: userId, title: result.title, goal: data.goal, days: result.days })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+
+    const { data: badge } = await supabase.from("badges").select("id").eq("code", "plan_made").single();
+    if (badge) await supabase.from("user_badges").insert({ user_id: userId, badge_id: badge.id }).select();
+
+    return row;
+  });
+
+// ---------------- Chat (doubt-solving tutor) ----------------
+export const sendChatMessage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { threadId: string; message: string }) =>
+    z.object({ threadId: z.string().uuid(), message: z.string().min(1).max(4000) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+
+    // Verify thread ownership
+    const { data: thread } = await supabase
+      .from("chat_threads")
+      .select("id, title")
+      .eq("id", data.threadId)
+      .eq("user_id", userId)
+      .single();
+    if (!thread) throw new Error("Thread not found");
+
+    // Save user message
+    const { error: userInsErr } = await supabase.from("chat_messages").insert({
+      thread_id: data.threadId,
+      user_id: userId,
+      role: "user",
+      content: data.message,
+    });
+    if (userInsErr) throw new Error(userInsErr.message);
+
+    // Load history (last 20)
+    const { data: history } = await supabase
+      .from("chat_messages")
+      .select("role, content")
+      .eq("thread_id", data.threadId)
+      .order("created_at", { ascending: true })
+      .limit(20);
+
+    const { data: prof } = await supabase
+      .from("profiles")
+      .select("learning_style, display_name")
+      .eq("user_id", userId)
+      .single();
+
+    const sys = `You are an intelligent personal tutor. Explain concepts clearly with simple language, examples, and step-by-step reasoning. Use markdown and code blocks where useful. Adapt to the student's learning style: ${prof?.learning_style ?? "balanced"}. The student's name is ${prof?.display_name ?? "the student"}.`;
+
+    const reply = await openaiChat({
+      messages: [
+        { role: "system", content: sys },
+        ...((history ?? []) as { role: "user" | "assistant" | "system"; content: string }[]),
+      ],
+      temperature: 0.7,
+    });
+
+    const { data: aMsg, error: aErr } = await supabase
+      .from("chat_messages")
+      .insert({ thread_id: data.threadId, user_id: userId, role: "assistant", content: reply })
+      .select()
+      .single();
+    if (aErr) throw new Error(aErr.message);
+
+    // Auto-title if first reply
+    if ((history?.length ?? 0) <= 1 && thread.title === "New conversation") {
+      const title = data.message.slice(0, 60).replace(/\s+/g, " ").trim();
+      await supabase.from("chat_threads").update({ title }).eq("id", data.threadId);
+    } else {
+      await supabase.from("chat_threads").update({ updated_at: new Date().toISOString() }).eq("id", data.threadId);
+    }
+
+    return { reply: aMsg };
+  });
