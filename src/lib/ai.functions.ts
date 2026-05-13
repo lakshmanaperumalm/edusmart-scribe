@@ -412,3 +412,33 @@ export const sendChatMessage = createServerFn({ method: "POST" })
 
     return { reply: aMsg };
   });
+
+// ---------------- Onboarding ----------------
+export const completeOnboarding = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: {
+    displayName: string | null;
+    learningStyle: "visual" | "audio" | "reading_writing" | "practical";
+    interests: string[];
+    goals: string[];
+  }) => z.object({
+    displayName: z.string().max(80).nullable(),
+    learningStyle: z.enum(["visual", "audio", "reading_writing", "practical"]),
+    interests: z.array(z.string().max(60)).max(20),
+    goals: z.array(z.string().max(200)).max(10),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { userId } = context;
+    const { error } = await supabaseAdmin.from("profiles").update({
+      display_name: data.displayName,
+      learning_style: data.learningStyle,
+      interests: data.interests,
+      goals: data.goals,
+      onboarded: true,
+    }).eq("user_id", userId);
+    if (error) {
+      console.error("[onboarding] db error", error);
+      throw new Error("Could not save your profile. Please try again.");
+    }
+    return { ok: true };
+  });
