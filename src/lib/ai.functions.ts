@@ -74,7 +74,7 @@ export const generateNotes = createServerFn({ method: "POST" })
       })
       .select()
       .single();
-    if (error) throw new Error(error.message);
+    if (error) { console.error("[ai] db error", error); throw new Error("Could not save your data. Please try again."); }
     await supabase.from("performance_events").insert({
       user_id: userId,
       topic: data.topic,
@@ -159,7 +159,7 @@ export const generateQuiz = createServerFn({ method: "POST" })
       })
       .select()
       .single();
-    if (error) throw new Error(error.message);
+    if (error) { console.error("[ai] db error", error); throw new Error("Could not save your data. Please try again."); }
     return row;
   });
 
@@ -231,7 +231,7 @@ export const submitQuiz = createServerFn({ method: "POST" })
       })
       .select()
       .single();
-    if (aerr) throw new Error(aerr.message);
+    if (aerr) { console.error("[ai] db error", aerr); throw new Error("Could not save your quiz attempt. Please try again."); }
 
     await supabase.from("performance_events").insert({
       user_id: userId,
@@ -335,7 +335,7 @@ export const generateStudyPlan = createServerFn({ method: "POST" })
       .insert({ user_id: userId, title: result.title, goal: data.goal, days: result.days })
       .select()
       .single();
-    if (error) throw new Error(error.message);
+    if (error) { console.error("[ai] db error", error); throw new Error("Could not save your data. Please try again."); }
 
     const { data: badge } = await supabase.from("badges").select("id").eq("code", "plan_made").single();
     if (badge) await supabase.from("user_badges").insert({ user_id: userId, badge_id: badge.id }).select();
@@ -368,7 +368,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       role: "user",
       content: data.message,
     });
-    if (userInsErr) throw new Error(userInsErr.message);
+    if (userInsErr) { console.error("[ai] db error", userInsErr); throw new Error("Could not save your message. Please try again."); }
 
     // Load history (last 20)
     const { data: history } = await supabase
@@ -399,7 +399,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       .insert({ thread_id: data.threadId, user_id: userId, role: "assistant", content: reply })
       .select()
       .single();
-    if (aErr) throw new Error(aErr.message);
+    if (aErr) { console.error("[ai] db error", aErr); throw new Error("Could not save the response. Please try again."); }
 
     // Auto-title if first reply
     if ((history?.length ?? 0) <= 1 && thread.title === "New conversation") {
