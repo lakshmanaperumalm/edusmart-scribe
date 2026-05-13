@@ -38,17 +38,23 @@ function Onboarding() {
   async function save() {
     if (!user) return;
     setBusy(true);
-    const { error } = await supabase.from("profiles").update({
-      display_name: name || null,
-      learning_style: style as "visual" | "audio" | "reading_writing" | "practical",
-      interests: interests.split(",").map((s) => s.trim()).filter(Boolean),
-      goals: goal ? [goal] : [],
-      onboarded: true,
-    }).eq("user_id", user.id);
-    setBusy(false);
-    if (error) return toast.error(error.message);
-    toast.success("Profile ready!");
-    navigate({ to: "/dashboard" });
+    try {
+      const { completeOnboarding } = await import("@/lib/ai.functions");
+      await completeOnboarding({
+        data: {
+          displayName: name || null,
+          learningStyle: style as "visual" | "audio" | "reading_writing" | "practical",
+          interests: interests.split(",").map((s) => s.trim()).filter(Boolean),
+          goals: goal ? [goal] : [],
+        },
+      });
+      toast.success("Profile ready!");
+      navigate({ to: "/dashboard" });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save your profile.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
