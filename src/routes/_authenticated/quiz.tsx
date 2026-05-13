@@ -31,8 +31,8 @@ function QuizPage() {
   const gen = useMutation({
     mutationFn: () => genFn({ data: { subject, topic, difficulty, count: 8 } }),
     onSuccess: (q) => {
-      const questions = (q as { id: string; questions: Q[] }).questions;
-      setQuiz({ id: (q as { id: string }).id, questions });
+      const questions = (q as unknown as { id: string; questions: Q[] }).questions;
+      setQuiz({ id: (q as unknown as { id: string }).id, questions });
       setAnswers(Array(questions.length).fill(-1));
       setStartTime(Date.now());
       setResult(null);

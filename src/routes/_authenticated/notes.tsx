@@ -38,7 +38,7 @@ function NotesPage() {
     enabled: !!user,
     queryFn: async () => {
       const { data } = await supabase.from("notes").select("*").eq("user_id", user!.id).order("created_at", { ascending: false });
-      return (data ?? []) as Note[];
+      return (data ?? []) as unknown as Note[];
     },
   });
 
@@ -46,7 +46,7 @@ function NotesPage() {
     mutationFn: () => fn({ data: { topic, level } }),
     onSuccess: (n) => {
       toast.success("Notes generated");
-      setActive(n as Note);
+      setActive(n as unknown as Note);
       setTopic("");
       qc.invalidateQueries({ queryKey: ["notes", user?.id] });
     },
