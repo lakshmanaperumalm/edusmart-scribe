@@ -250,7 +250,7 @@ export const submitQuiz = createServerFn({ method: "POST" })
       .select("xp")
       .eq("user_id", userId)
       .single();
-    await supabase
+    await supabaseAdmin
       .from("profiles")
       .update({ xp: (prof?.xp ?? 0) + xpGained, last_active: new Date().toISOString().slice(0, 10) })
       .eq("user_id", userId);
