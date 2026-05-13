@@ -1,14 +1,26 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-provider";
 import { Shield } from "lucide-react";
 
-export const Route = createFileRoute("/_authenticated/admin")({ component: Admin });
+export const Route = createFileRoute("/_authenticated/admin")({
+  beforeLoad: async () => {
+    const { data: sess } = await supabase.auth.getSession();
+    if (!sess.session) throw redirect({ to: "/auth" });
+    const { data: roleRows } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", sess.session.user.id);
+    const roles = (roleRows ?? []).map((r) => r.role);
+    if (!roles.includes("admin")) throw redirect({ to: "/dashboard" });
+  },
+  component: Admin,
+});
 
 function Admin() {
   const { roles } = useAuth();
-  if (!roles.includes("admin")) return <div className="p-10 text-muted-foreground">Admin role required.</div>;
+  if (!roles.includes("admin")) return null;
 
   const { data } = useQuery({
     queryKey: ["admin-stats"],

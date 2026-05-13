@@ -1,15 +1,29 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-provider";
 import { GraduationCap } from "lucide-react";
 
-export const Route = createFileRoute("/_authenticated/teacher")({ component: Teacher });
+export const Route = createFileRoute("/_authenticated/teacher")({
+  beforeLoad: async () => {
+    const { data: sess } = await supabase.auth.getSession();
+    if (!sess.session) throw redirect({ to: "/auth" });
+    const { data: roleRows } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", sess.session.user.id);
+    const roles = (roleRows ?? []).map((r) => r.role);
+    if (!roles.includes("teacher") && !roles.includes("admin")) {
+      throw redirect({ to: "/dashboard" });
+    }
+  },
+  component: Teacher,
+});
 
 function Teacher() {
   const { roles } = useAuth();
   if (!roles.includes("teacher") && !roles.includes("admin")) {
-    return <div className="p-10 text-muted-foreground">Teacher role required.</div>;
+    return null;
   }
 
   const { data: students } = useQuery({

@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { openaiChat, openaiJSON } from "./openai.server";
 
 // ---------------- Notes generation ----------------
@@ -74,7 +75,7 @@ export const generateNotes = createServerFn({ method: "POST" })
       })
       .select()
       .single();
-    if (error) throw new Error(error.message);
+    if (error) { console.error("[ai] db error", error); throw new Error("Could not save your data. Please try again."); }
     await supabase.from("performance_events").insert({
       user_id: userId,
       topic: data.topic,
@@ -159,7 +160,7 @@ export const generateQuiz = createServerFn({ method: "POST" })
       })
       .select()
       .single();
-    if (error) throw new Error(error.message);
+    if (error) { console.error("[ai] db error", error); throw new Error("Could not save your data. Please try again."); }
     return row;
   });
 
@@ -231,7 +232,7 @@ export const submitQuiz = createServerFn({ method: "POST" })
       })
       .select()
       .single();
-    if (aerr) throw new Error(aerr.message);
+    if (aerr) { console.error("[ai] db error", aerr); throw new Error("Could not save your quiz attempt. Please try again."); }
 
     await supabase.from("performance_events").insert({
       user_id: userId,
@@ -249,7 +250,7 @@ export const submitQuiz = createServerFn({ method: "POST" })
       .select("xp")
       .eq("user_id", userId)
       .single();
-    await supabase
+    await supabaseAdmin
       .from("profiles")
       .update({ xp: (prof?.xp ?? 0) + xpGained, last_active: new Date().toISOString().slice(0, 10) })
       .eq("user_id", userId);
@@ -257,7 +258,7 @@ export const submitQuiz = createServerFn({ method: "POST" })
     // First quiz badge
     const { data: badge } = await supabase.from("badges").select("id").eq("code", "first_quiz").single();
     if (badge) {
-      await supabase.from("user_badges").insert({ user_id: userId, badge_id: badge.id }).select();
+      await supabaseAdmin.from("user_badges").insert({ user_id: userId, badge_id: badge.id });
     }
 
     return { attempt, perQ, weakTopics, feedback, xpGained };
@@ -335,10 +336,10 @@ export const generateStudyPlan = createServerFn({ method: "POST" })
       .insert({ user_id: userId, title: result.title, goal: data.goal, days: result.days })
       .select()
       .single();
-    if (error) throw new Error(error.message);
+    if (error) { console.error("[ai] db error", error); throw new Error("Could not save your data. Please try again."); }
 
     const { data: badge } = await supabase.from("badges").select("id").eq("code", "plan_made").single();
-    if (badge) await supabase.from("user_badges").insert({ user_id: userId, badge_id: badge.id }).select();
+    if (badge) await supabaseAdmin.from("user_badges").insert({ user_id: userId, badge_id: badge.id });
 
     return row;
   });
@@ -368,7 +369,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       role: "user",
       content: data.message,
     });
-    if (userInsErr) throw new Error(userInsErr.message);
+    if (userInsErr) { console.error("[ai] db error", userInsErr); throw new Error("Could not save your message. Please try again."); }
 
     // Load history (last 20)
     const { data: history } = await supabase
@@ -399,7 +400,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       .insert({ thread_id: data.threadId, user_id: userId, role: "assistant", content: reply })
       .select()
       .single();
-    if (aErr) throw new Error(aErr.message);
+    if (aErr) { console.error("[ai] db error", aErr); throw new Error("Could not save the response. Please try again."); }
 
     // Auto-title if first reply
     if ((history?.length ?? 0) <= 1 && thread.title === "New conversation") {
@@ -410,4 +411,34 @@ export const sendChatMessage = createServerFn({ method: "POST" })
     }
 
     return { reply: aMsg };
+  });
+
+// ---------------- Onboarding ----------------
+export const completeOnboarding = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: {
+    displayName: string | null;
+    learningStyle: "visual" | "audio" | "reading_writing" | "practical";
+    interests: string[];
+    goals: string[];
+  }) => z.object({
+    displayName: z.string().max(80).nullable(),
+    learningStyle: z.enum(["visual", "audio", "reading_writing", "practical"]),
+    interests: z.array(z.string().max(60)).max(20),
+    goals: z.array(z.string().max(200)).max(10),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { userId } = context;
+    const { error } = await supabaseAdmin.from("profiles").update({
+      display_name: data.displayName,
+      learning_style: data.learningStyle,
+      interests: data.interests,
+      goals: data.goals,
+      onboarded: true,
+    }).eq("user_id", userId);
+    if (error) {
+      console.error("[onboarding] db error", error);
+      throw new Error("Could not save your profile. Please try again.");
+    }
+    return { ok: true };
   });

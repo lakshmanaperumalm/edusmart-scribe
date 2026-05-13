@@ -36,7 +36,8 @@ export async function openaiChat(opts: {
 
   if (!res.ok) {
     const txt = await res.text();
-    throw new Error(`OpenAI error ${res.status}: ${txt.slice(0, 400)}`);
+    console.error(`[openai] error ${res.status}: ${txt.slice(0, 800)}`);
+    throw new Error("AI service request failed. Please try again.");
   }
   const json = (await res.json()) as { choices: { message: { content: string } }[] };
   return json.choices[0]?.message?.content ?? "";
