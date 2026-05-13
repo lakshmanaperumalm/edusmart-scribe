@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { openaiChat, openaiJSON } from "./openai.server";
 
 // ---------------- Notes generation ----------------
@@ -257,7 +258,7 @@ export const submitQuiz = createServerFn({ method: "POST" })
     // First quiz badge
     const { data: badge } = await supabase.from("badges").select("id").eq("code", "first_quiz").single();
     if (badge) {
-      await supabase.from("user_badges").insert({ user_id: userId, badge_id: badge.id }).select();
+      await supabaseAdmin.from("user_badges").insert({ user_id: userId, badge_id: badge.id });
     }
 
     return { attempt, perQ, weakTopics, feedback, xpGained };
@@ -338,7 +339,7 @@ export const generateStudyPlan = createServerFn({ method: "POST" })
     if (error) { console.error("[ai] db error", error); throw new Error("Could not save your data. Please try again."); }
 
     const { data: badge } = await supabase.from("badges").select("id").eq("code", "plan_made").single();
-    if (badge) await supabase.from("user_badges").insert({ user_id: userId, badge_id: badge.id }).select();
+    if (badge) await supabaseAdmin.from("user_badges").insert({ user_id: userId, badge_id: badge.id });
 
     return row;
   });
