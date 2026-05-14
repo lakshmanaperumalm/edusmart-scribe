@@ -36,7 +36,7 @@ function Landing() {
             Your <span className="text-gradient">AI personal tutor</span>,<br />built around how you learn.
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground">
-            LumenAI generates personalized study plans, notes, flashcards, and adaptive quizzes — and answers your doubts in real time.
+            RAW generates personalized study plans, notes, flashcards, and adaptive quizzes — and answers your doubts in real time.
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
             <Link to="/auth">
@@ -67,7 +67,7 @@ function Landing() {
       <footer className="border-t border-border">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6 text-xs text-muted-foreground">
           <Logo size={20} />
-          <span>© {new Date().getFullYear()} LumenAI</span>
+          <span>© {new Date().getFullYear()} RAW</span>
         </div>
       </footer>
     </div>

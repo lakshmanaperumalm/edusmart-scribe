@@ -10,7 +10,7 @@ export function Logo({ size = 28 }: { size?: number }) {
         <Brain className="text-primary-foreground" style={{ width: size - 4, height: size - 4 }} />
       </div>
       <span className="font-display text-lg font-bold tracking-tight">
-        Lumen<span className="text-gradient">AI</span>
+        RAW
       </span>
     </div>
   );

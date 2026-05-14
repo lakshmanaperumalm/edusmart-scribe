@@ -73,7 +73,7 @@ function AuthPage() {
               Learn smarter,<br /><span className="text-gradient">not harder.</span>
             </h2>
             <p className="mt-4 max-w-sm text-muted-foreground">
-              Join LumenAI and let an AI tutor adapt to your pace, style, and goals.
+              Join RAW and let an AI tutor adapt to your pace, style, and goals.
             </p>
           </div>
         </div>
