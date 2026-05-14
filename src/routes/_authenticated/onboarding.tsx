@@ -60,7 +60,7 @@ function Onboarding() {
   return (
     <div className="mx-auto max-w-2xl px-6 py-12">
       <h1 className="font-display text-3xl font-bold">Let's personalize your tutor</h1>
-      <p className="mt-2 text-muted-foreground">A few quick details so LumenAI can teach you the way you learn best.</p>
+      <p className="mt-2 text-muted-foreground">A few quick details so RAW can teach you the way you learn best.</p>
 
       <div className="mt-8 space-y-6">
         <div><Label>Your name</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Jane Doe" /></div>
