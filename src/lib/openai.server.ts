@@ -1,6 +1,6 @@
-// Server-only OpenAI helper. Never import this from client modules.
+// Server-only AI helper using Lovable AI Gateway. Never import from client modules.
 
-const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
+const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 
 type ChatMsg = { role: "system" | "user" | "assistant"; content: string };
 
@@ -10,11 +10,11 @@ export async function openaiChat(opts: {
   jsonSchema?: { name: string; schema: Record<string, unknown> };
   temperature?: number;
 }): Promise<string> {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) throw new Error("OPENAI_API_KEY is not configured");
+  const key = process.env.LOVABLE_API_KEY;
+  if (!key) throw new Error("LOVABLE_API_KEY is not configured");
 
   const body: Record<string, unknown> = {
-    model: opts.model ?? "gpt-4o-mini",
+    model: opts.model ?? "google/gemini-2.5-flash",
     messages: opts.messages,
   };
   if (opts.temperature !== undefined) body.temperature = opts.temperature;
@@ -25,7 +25,7 @@ export async function openaiChat(opts: {
     };
   }
 
-  const res = await fetch(OPENAI_URL, {
+  const res = await fetch(GATEWAY_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -36,7 +36,9 @@ export async function openaiChat(opts: {
 
   if (!res.ok) {
     const txt = await res.text();
-    console.error(`[openai] error ${res.status}: ${txt.slice(0, 800)}`);
+    console.error(`[ai-gateway] error ${res.status}: ${txt.slice(0, 800)}`);
+    if (res.status === 429) throw new Error("Rate limit reached. Please try again in a moment.");
+    if (res.status === 402) throw new Error("AI credits exhausted. Please add credits to continue.");
     throw new Error("AI service request failed. Please try again.");
   }
   const json = (await res.json()) as { choices: { message: { content: string } }[] };
