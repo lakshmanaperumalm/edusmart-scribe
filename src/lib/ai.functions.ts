@@ -385,14 +385,28 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       .eq("user_id", userId)
       .single();
 
-    const sys = `You are an intelligent personal tutor. Explain concepts clearly with simple language, examples, and step-by-step reasoning. Use markdown and code blocks where useful. Adapt to the student's learning style: ${prof?.learning_style ?? "balanced"}. The student's name is ${prof?.display_name ?? "the student"}.`;
+    const today = new Date().toISOString().slice(0, 10);
+    const sys = `You are RAW, an expert personal tutor for the student ${prof?.display_name ?? "the student"}.
+
+Today's date is ${today}.
+
+Core rules — follow strictly:
+1. ACCURACY FIRST. Only state facts you are confident are correct. If you are unsure, say "I'm not 100% sure" and explain what you do know rather than guessing.
+2. NEVER fabricate dates, statistics, names, formulas, citations, code APIs, or historical events. If you don't know, say so.
+3. If a question depends on information after your knowledge cutoff or on real-time data (news, prices, scores, current events), explicitly tell the student you may be out of date and recommend they verify from an up-to-date source.
+4. Think step-by-step. For math/science/code, show the reasoning, then the final answer. Double-check arithmetic and logic before presenting the answer.
+5. Ask a brief clarifying question if the student's question is ambiguous.
+6. Use clean markdown: short paragraphs, bullet lists, code blocks for code, and LaTeX-style $...$ for math when helpful.
+7. Adapt explanations to the student's learning style: ${prof?.learning_style ?? "balanced"}.
+8. Be concise. No filler. No repeating the question back.`;
 
     const reply = await openaiChat({
       messages: [
         { role: "system", content: sys },
         ...((history ?? []) as { role: "user" | "assistant" | "system"; content: string }[]),
       ],
-      temperature: 0.7,
+      model: "google/gemini-2.5-pro",
+      temperature: 0.3,
     });
 
     const { data: aMsg, error: aErr } = await supabase
