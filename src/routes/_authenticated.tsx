@@ -14,6 +14,7 @@ const nav = [
   { to: "/quiz", label: "Quizzes", icon: Target },
   { to: "/plan", label: "Study Plan", icon: CalendarRange },
   { to: "/chat", label: "Doubt Tutor", icon: MessageSquare },
+  { to: "/voice", label: "Voice Tutor", icon: Mic },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
 ] as const;
 
