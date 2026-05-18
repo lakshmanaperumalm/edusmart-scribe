@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { useAuth } from "@/lib/auth-provider";
 import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
-import { LayoutDashboard, BookOpen, Target, MessageSquare, CalendarRange, BarChart3, GraduationCap, Shield, LogOut } from "lucide-react";
+import { LayoutDashboard, BookOpen, Target, MessageSquare, CalendarRange, BarChart3, GraduationCap, Shield, LogOut, Mic } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated")({ component: AppLayout });
@@ -14,6 +14,7 @@ const nav = [
   { to: "/quiz", label: "Quizzes", icon: Target },
   { to: "/plan", label: "Study Plan", icon: CalendarRange },
   { to: "/chat", label: "Doubt Tutor", icon: MessageSquare },
+  { to: "/voice", label: "Voice Tutor", icon: Mic },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
 ] as const;
 
