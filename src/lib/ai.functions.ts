@@ -456,3 +456,41 @@ export const completeOnboarding = createServerFn({ method: "POST" })
     }
     return { ok: true };
   });
+
+// ---------------- Voice Tutor (lightweight, no persistence) ----------------
+export const askVoiceTutor = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { question: string }) =>
+    z.object({ question: z.string().min(1).max(2000) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: prof } = await supabase
+      .from("profiles")
+      .select("learning_style, display_name")
+      .eq("user_id", userId)
+      .single();
+
+    const sys = `You are RAW, a friendly AI voice tutor for ${prof?.display_name ?? "the student"}.
+
+You are speaking out loud — so respond in natural spoken language:
+- 2-4 short sentences max (this will be read aloud)
+- No markdown, no bullet points, no code blocks, no LaTeX
+- No headings, no numbered lists — just plain conversational prose
+- Spell out symbols (say "plus" not "+", "equals" not "=")
+- If the question is complex, give a clear summary and offer to go deeper
+- Be warm, encouraging, and clear
+- If unsure, say so honestly. Never fabricate facts, dates, or formulas.
+- Adapt to learning style: ${prof?.learning_style ?? "balanced"}`;
+
+    const reply = await openaiChat({
+      messages: [
+        { role: "system", content: sys },
+        { role: "user", content: data.question },
+      ],
+      model: "google/gemini-2.5-flash",
+      temperature: 0.4,
+    });
+
+    return { reply };
+  });
