@@ -22,6 +22,7 @@ type Chapter = DeepNote["chapters"][number];
 type Note = DeepNote & {
   id: string;
   user_id: string;
+  content: string | null;
   graph: { nodes: { id: string; label: string }[]; edges: { from: string; to: string }[] };
   toc: { id: string; title: string }[];
   key_points: string[];
