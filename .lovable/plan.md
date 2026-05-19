@@ -1,88 +1,79 @@
+# AI Notes Generator + PDF Export
 
-# Intelligent Personalized Learning Assistant — v1
+Extend the existing `/notes` feature into a premium "Notes Studio" that generates deep, multi-chapter study material, visualizes related subtopics as a node graph, and exports a beautifully formatted PDF. Builds on existing `notes` table, `generateNotes` server fn, and gamification.
 
-The full spec is huge. I'll build a strong, production-shaped v1 you can iterate on, not a thin demo. Anything not in v1 is listed at the end and easy to add next.
+## 1. Schema (migration)
 
-## Foundation
-- Enable Lovable Cloud (Postgres + Auth + Storage)
-- Auth: Email/password + Google sign-in, password reset page
-- Roles: `student`, `teacher`, `admin` in a separate `user_roles` table with `has_role()` SECURITY DEFINER (no privilege escalation)
-- Bring-your-own OpenAI key stored as a server secret (`OPENAI_API_KEY`)
+Extend `notes` (additive, non-breaking):
+- `language` text default 'en'
+- `chapters` jsonb — array of `{ id, title, introduction, definitions[], concepts[], examples[], diagrams[], key_points[], tables[], formulas[], summary, interview_qs[], mcqs[], revision[] }`
+- `graph` jsonb — `{ nodes: [{id,label,group}], edges: [{from,to,label?}] }`
+- `toc` jsonb — array of `{ title, page? }` (page filled client-side at PDF time)
+- `meta` jsonb — `{ pages_est, generated_at, model }`
 
-## Database (RLS on every table)
-- `profiles` (name, avatar, learning_style, interests[], goals[], xp, streak)
-- `user_roles` (user_id, role)
-- `courses`, `lessons`, `enrollments`
-- `quizzes`, `quiz_questions`, `quiz_attempts` (score, weak_topics jsonb)
-- `study_plans` (ai-generated, week schedule jsonb)
-- `notes` (ai-generated study material, flashcards jsonb)
-- `chat_threads`, `chat_messages` (threaded chatbot, user-scoped)
-- `performance_events` (time spent, topic, accuracy) → powers analytics
-- `badges`, `user_badges`
+Keep existing `summary/content/key_points/flashcards` for backward compat. RLS unchanged (already user-scoped).
 
-## Pages & Features
+## 2. Server functions (`src/lib/ai.functions.ts`)
 
-### Public
-- Landing page (hero, features, CTA)
-- Login / Signup / Forgot password / Reset password
+- `planNotes({ topic, level, language })` → returns `{ subtopics: string[] (8–14), graph }`. Uses `openaiJSON` with `google/gemini-2.5-pro` for breadth.
+- `generateDeepNotes({ topic, level, language })` → orchestrates:
+  1. Call `planNotes` to get subtopics + graph.
+  2. For each subtopic, call `openaiJSON` to produce one chapter with the full schema (intro, definitions, concepts, examples, diagram descriptions, key points, tables, formulas, summary, interview Qs, MCQs, revision).
+  3. Generate cover blurb + global summary + toc.
+  4. Persist full row to `notes` (chapters, graph, language).
+  5. Award XP + insert `performance_events`.
+- `generateFlashcardsFromNotes({ noteId })` and `generateQuizFromNotes({ noteId })` — derive from saved chapters (reuse existing `quizzes` table for quiz).
+- All protected by `requireSupabaseAuth`; Zod-validated; errors surfaced via the existing toast pattern.
 
-### Student (`/app/*`)
-- Onboarding: pick learning style, interests, goals
-- Dashboard: streak, XP, weekly progress chart, AI recommendations, recent activity
-- AI Study Plan: generate 7-day personalized plan from performance + goals
-- AI Notes Generator: paste topic / upload PDF → notes + key points + flashcards (3 levels)
-- AI Quiz: generate adaptive MCQ quiz, take it, get instant evaluation + weak-topic analysis, difficulty auto-adjusts on next attempt
-- Doubt Chatbot: threaded conversations (sidebar of threads, persisted), markdown + code rendering, streaming
-- Analytics: subject-wise accuracy, time spent, weak/strong topics
-- Gamification: badges, daily streak, XP
+Performance: run chapter calls with `Promise.all` in batches of 3 to stay within timeout while keeping latency reasonable. Stream progress via polling a temp progress row OR — simpler — return chapter count up-front and have the client show indeterminate stages.
 
-### Teacher (`/teacher/*`)
-- Dashboard: students overview, weak-topic heatmap, quiz analytics
-- Course/lesson management (create courses, upload PDF/link materials)
-- Quiz creation (manual + AI-assisted)
+## 3. PDF generation (client-side)
 
-### Admin (`/admin/*`)
-- Users + role management
-- Platform stats (users, AI calls, quizzes taken)
-- Course oversight
+Use **pdfmake** (already-friendly for TOC, headers/footers, tables, page numbers; pure JS, no native deps). Install: `pdfmake`.
 
-## AI (server functions, key never leaves server)
-- `generateStudyPlan(profile, performance)` → structured JSON
-- `generateNotes(topic, level)` / `summarizePdf(text)` → notes + flashcards
-- `generateQuiz(topic, difficulty, count)` → MCQs with answers + explanations
-- `evaluateAttempt(answers, questions)` → per-question feedback + weak topics
-- `chatStream(threadId, message)` → streaming tutor response, conversation memory
-- `recommendNext(userId)` → adaptive next-topic suggestion
+`src/lib/notes-pdf.ts` exports `buildNotesPdf(note)`:
+- Cover page: gradient header, topic, level, date, RAW logo watermark.
+- Auto-generated TOC (pdfmake `toc` feature) with real page numbers.
+- Per-chapter sections with styled H1/H2, callout boxes for "Key Points" and "Formulas", striped tables, highlighted important concepts, diagram placeholder boxes with caption.
+- Interview Qs + MCQs (answers on flip page).
+- Revision cheat-sheet at the end.
+- Header: topic title (right). Footer: "RAW — AI Personal Tutor • page X of Y" (left + page number right).
+- Diagonal subtle "RAW" watermark on every content page.
+- One-click "Download PDF" button triggers `pdfMake.createPdf(docDef).download(filename)`.
 
-Model: `gpt-5.2` for generation/eval (your OpenAI key), structured outputs via JSON schema.
+## 4. UI — Notes Studio (`src/routes/_authenticated/notes.tsx` rewrite)
 
-## Design
-- Modern edu-tech: clean, focused, generous whitespace
-- Indigo/violet primary on near-black surfaces, dark mode default with light toggle
-- Display font for headings, Inter for body
-- Recharts for analytics, framer-motion for subtle motion, AI Elements for chat
+Three-pane layout:
+- **Left sidebar**: history list (existing), search, "New" button. Each item shows topic, level, language flag.
+- **Center**: topic input, level + language selects, "Generate Deep Notes" button with Framer Motion loading state showing staged progress ("Planning subtopics → Writing chapter 3/12 → Finalizing"). Below: rendered notes with chapter tabs.
+- **Right**: **Node graph** rendered with `reactflow` (already common; install `reactflow`). Clicking a node scrolls to that chapter and highlights it. "Expand node" button calls `generateDeepNotes` scoped to that subtopic and appends as a new chapter.
 
-## Tech (this template)
-- TanStack Start + React 19 + Tailwind v4
-- Lovable Cloud (Supabase) — Postgres, Auth, Storage, RLS
-- OpenAI via server functions (`createServerFn`)
-- shadcn UI + AI Elements for chat surface
+Top action bar on a loaded note:
+- Download PDF
+- Generate Flashcards
+- Generate Quiz
+- Read Aloud (uses browser `speechSynthesis`, reuses voice tutor pattern — reads current chapter summary)
+- Language toggle (re-runs generation in target language)
 
-## Not in v1 (easy follow-ups)
-- Voice tutor (STT/TTS), emotion detection, AR/VR
-- Multi-language, offline mode, blockchain certs
-- Push notifications + email reminders (we'll stub UI; wiring email needs Resend)
-- Real-time leaderboards across cohorts
-- Video lesson generation
+Dark mode: already supported via tokens; ensure all new components use semantic tokens (`bg-card`, `text-foreground`, `border-border`, `bg-primary`).
 
-## Sequence
-1. Enable Cloud + collect OpenAI key
-2. Auth + roles + onboarding
-3. Schema + RLS migrations
-4. Student dashboard + AI generators (plan, notes, quiz)
-5. Threaded chatbot
-6. Analytics + gamification
-7. Teacher + admin dashboards
-8. Polish, SEO, empty states
+## 5. Dependencies to install
 
-This will take several iterations of generation. After each major chunk we can adjust.
+- `pdfmake` (PDF)
+- `reactflow` (node graph)
+- `dompurify` (sanitize markdown-derived HTML if rendered — optional)
+
+## 6. Out of scope (deferred unless asked)
+
+- Real diagram image generation (placeholders only — would need image model + storage; can be follow-up)
+- True streaming progress (using polling estimate instead)
+- Saving PDFs to Storage server-side (download stays client-side)
+
+## 7. Verification
+
+- Migration applies cleanly; existing notes still render.
+- Generate a sample note ("Photosynthesis", intermediate) — expect 8–14 chapters, graph renders, PDF downloads with TOC + page numbers + watermark.
+- QA the PDF by opening it and confirming cover, TOC pages, headers/footers, no clipped text.
+- Dark mode passes visual check on Notes Studio.
+
+Confirm to proceed and I'll implement in this order: migration → server fns → notes-pdf lib → UI rewrite → install deps → verify.
