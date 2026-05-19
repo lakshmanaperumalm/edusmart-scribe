@@ -494,3 +494,245 @@ You are speaking out loud — so respond in natural spoken language:
 
     return { reply };
   });
+
+// ---------------- Deep Notes Generator ----------------
+const DeepPlanSchema = {
+  name: "deep_plan",
+  schema: {
+    type: "object",
+    properties: {
+      overview: { type: "string", description: "1-2 paragraph high level overview of the topic" },
+      subtopics: {
+        type: "array", minItems: 8, maxItems: 14,
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            title: { type: "string" },
+            blurb: { type: "string" },
+          },
+          required: ["id", "title", "blurb"],
+        },
+      },
+      edges: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: { from: { type: "string" }, to: { type: "string" } },
+          required: ["from", "to"],
+        },
+      },
+    },
+    required: ["overview", "subtopics", "edges"],
+  },
+} as const;
+
+const ChapterSchema = {
+  name: "chapter",
+  schema: {
+    type: "object",
+    properties: {
+      introduction: { type: "string" },
+      definitions: {
+        type: "array", minItems: 2, maxItems: 8,
+        items: {
+          type: "object",
+          properties: { term: { type: "string" }, definition: { type: "string" } },
+          required: ["term", "definition"],
+        },
+      },
+      concepts: {
+        type: "array", minItems: 3, maxItems: 8,
+        items: {
+          type: "object",
+          properties: { heading: { type: "string" }, body: { type: "string" } },
+          required: ["heading", "body"],
+        },
+      },
+      examples: {
+        type: "array", minItems: 2, maxItems: 6,
+        items: {
+          type: "object",
+          properties: { title: { type: "string" }, body: { type: "string" } },
+          required: ["title", "body"],
+        },
+      },
+      diagrams: {
+        type: "array", minItems: 1, maxItems: 4,
+        items: {
+          type: "object",
+          properties: { caption: { type: "string" }, description: { type: "string" } },
+          required: ["caption", "description"],
+        },
+      },
+      key_points: { type: "array", minItems: 4, maxItems: 10, items: { type: "string" } },
+      tables: {
+        type: "array", minItems: 0, maxItems: 3,
+        items: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            headers: { type: "array", items: { type: "string" } },
+            rows: { type: "array", items: { type: "array", items: { type: "string" } } },
+          },
+          required: ["title", "headers", "rows"],
+        },
+      },
+      formulas: {
+        type: "array", minItems: 0, maxItems: 8,
+        items: {
+          type: "object",
+          properties: { name: { type: "string" }, formula: { type: "string" }, explanation: { type: "string" } },
+          required: ["name", "formula", "explanation"],
+        },
+      },
+      summary: { type: "string" },
+      interview_qs: {
+        type: "array", minItems: 3, maxItems: 8,
+        items: {
+          type: "object",
+          properties: { q: { type: "string" }, a: { type: "string" } },
+          required: ["q", "a"],
+        },
+      },
+      mcqs: {
+        type: "array", minItems: 3, maxItems: 6,
+        items: {
+          type: "object",
+          properties: {
+            q: { type: "string" },
+            choices: { type: "array", minItems: 4, maxItems: 4, items: { type: "string" } },
+            answer_index: { type: "integer", minimum: 0, maximum: 3 },
+            explanation: { type: "string" },
+          },
+          required: ["q", "choices", "answer_index", "explanation"],
+        },
+      },
+      revision: { type: "array", minItems: 3, maxItems: 10, items: { type: "string" } },
+    },
+    required: [
+      "introduction", "definitions", "concepts", "examples", "diagrams",
+      "key_points", "tables", "formulas", "summary", "interview_qs", "mcqs", "revision",
+    ],
+  },
+} as const;
+
+type DeepPlan = {
+  overview: string;
+  subtopics: { id: string; title: string; blurb: string }[];
+  edges: { from: string; to: string }[];
+};
+
+type Chapter = {
+  id: string;
+  title: string;
+  introduction: string;
+  definitions: { term: string; definition: string }[];
+  concepts: { heading: string; body: string }[];
+  examples: { title: string; body: string }[];
+  diagrams: { caption: string; description: string }[];
+  key_points: string[];
+  tables: { title: string; headers: string[]; rows: string[][] }[];
+  formulas: { name: string; formula: string; explanation: string }[];
+  summary: string;
+  interview_qs: { q: string; a: string }[];
+  mcqs: { q: string; choices: string[]; answer_index: number; explanation: string }[];
+  revision: string[];
+};
+
+export const generateDeepNotes = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: {
+    topic: string;
+    level: "beginner" | "intermediate" | "advanced";
+    language?: string;
+  }) =>
+    z.object({
+      topic: z.string().min(2).max(200),
+      level: z.enum(["beginner", "intermediate", "advanced"]),
+      language: z.string().min(2).max(20).default("en"),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const language = data.language ?? "en";
+
+    // 1. Plan
+    const plan = await openaiJSON<DeepPlan>({
+      model: "google/gemini-2.5-pro",
+      messages: [
+        {
+          role: "system",
+          content:
+            `You are a curriculum designer. Plan a comprehensive study guide for the given topic. Output language: ${language}. Pick 10-14 well-chosen subtopics that form a logical learning order, plus a graph of edges representing how subtopics relate (prereq or related-to). Each subtopic id must be a short slug like "s1","s2"...`,
+        },
+        { role: "user", content: `Topic: ${data.topic}\nLevel: ${data.level}\nReturn JSON.` },
+      ],
+      schema: DeepPlanSchema,
+    });
+
+    // 2. Generate chapters in batches of 3 for latency + safety
+    const subs = plan.subtopics;
+    const chapters: Chapter[] = [];
+    const batchSize = 3;
+    for (let i = 0; i < subs.length; i += batchSize) {
+      const batch = subs.slice(i, i + batchSize);
+      const results = await Promise.all(batch.map(async (s) => {
+        const ch = await openaiJSON<Omit<Chapter, "id" | "title">>({
+          model: "google/gemini-2.5-flash",
+          messages: [
+            {
+              role: "system",
+              content:
+                `You are an expert tutor producing one deep chapter of a study guide.
+Output language: ${language}. Level: ${data.level}.
+Be accurate, beginner-friendly when level=beginner, and use clear, structured prose.
+Never fabricate formulas, citations, or APIs. Every section is required — fill them all with substantive content.
+Diagrams: provide a caption and a textual description of what the diagram shows (an image is NOT generated).
+Tables: rows are arrays of strings matching headers length.
+Formulas: provide plain-text formulas (e.g. "E = m * c^2"). Explain each.
+MCQs: 4 choices, exactly one correct, with explanation.`,
+            },
+            {
+              role: "user",
+              content:
+                `Main topic: ${data.topic}\nChapter: ${s.title}\nFocus blurb: ${s.blurb}\nProduce the chapter as JSON.`,
+            },
+          ],
+          schema: ChapterSchema,
+        });
+        return { id: s.id, title: s.title, ...ch } as Chapter;
+      }));
+      chapters.push(...results);
+    }
+
+    const graph = {
+      nodes: subs.map((s) => ({ id: s.id, label: s.title })),
+      edges: plan.edges.filter((e) => subs.some((s) => s.id === e.from) && subs.some((s) => s.id === e.to)),
+    };
+    const toc = chapters.map((c) => ({ id: c.id, title: c.title }));
+
+    const { data: row, error } = await supabase.from("notes").insert({
+      user_id: userId,
+      topic: data.topic,
+      level: data.level,
+      language,
+      summary: plan.overview,
+      content: chapters.map((c) => `# ${c.title}\n\n${c.summary}`).join("\n\n"),
+      key_points: chapters.flatMap((c) => c.key_points).slice(0, 12),
+      flashcards: chapters.flatMap((c) => c.interview_qs.map((qa) => ({ q: qa.q, a: qa.a }))).slice(0, 20),
+      chapters,
+      graph,
+      toc,
+      meta: { pages_est: Math.max(10, chapters.length * 2), generated_at: new Date().toISOString(), model: "deep-v1" },
+    }).select().single();
+    if (error) { console.error("[deep-notes] db error", error); throw new Error("Could not save your notes. Please try again."); }
+
+    await supabase.from("performance_events").insert({
+      user_id: userId,
+      topic: data.topic,
+      event_type: "deep_notes_generated",
+    });
+
+    return row;
+  });
