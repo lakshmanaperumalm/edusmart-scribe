@@ -208,35 +208,50 @@ export type Database = {
       }
       notes: {
         Row: {
+          chapters: Json
           content: string | null
           created_at: string
           flashcards: Json
+          graph: Json
           id: string
           key_points: Json
+          language: string
           level: string
+          meta: Json
           summary: string | null
+          toc: Json
           topic: string
           user_id: string
         }
         Insert: {
+          chapters?: Json
           content?: string | null
           created_at?: string
           flashcards?: Json
+          graph?: Json
           id?: string
           key_points?: Json
+          language?: string
           level?: string
+          meta?: Json
           summary?: string | null
+          toc?: Json
           topic: string
           user_id: string
         }
         Update: {
+          chapters?: Json
           content?: string | null
           created_at?: string
           flashcards?: Json
+          graph?: Json
           id?: string
           key_points?: Json
+          language?: string
           level?: string
+          meta?: Json
           summary?: string | null
+          toc?: Json
           topic?: string
           user_id?: string
         }
