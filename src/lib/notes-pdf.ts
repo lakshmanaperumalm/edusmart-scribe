@@ -71,14 +71,15 @@ function tableContent(title: string, headers: string[], rows: string[][]): Conte
       headerRows: 1,
       widths: headers.map(() => "*"),
       body: [
-        headers.map((h) => ({ text: h, bold: true, color: "#ffffff", fillColor: BRAND, margin: [4, 4, 4, 4] })),
+        headers.map((h) => ({ text: h, bold: true, color: "#ffffff", fillColor: BRAND, margin: [4, 4, 4, 4] as [number, number, number, number] })),
         ...rows.map((r, ri) =>
           r.map((cell) => ({
             text: String(cell ?? ""),
-            margin: [4, 3, 4, 3],
+            margin: [4, 3, 4, 3] as [number, number, number, number],
             fillColor: ri % 2 === 0 ? "#ffffff" : SOFT,
           })),
         ),
+      ] as unknown as ContentTable["table"]["body"],
       ],
     },
     layout: {
