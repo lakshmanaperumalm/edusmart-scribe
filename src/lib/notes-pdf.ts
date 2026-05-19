@@ -80,7 +80,6 @@ function tableContent(title: string, headers: string[], rows: string[][]): Conte
           })),
         ),
       ] as unknown as ContentTable["table"]["body"],
-      ],
     },
     layout: {
       hLineWidth: () => 0.5,
