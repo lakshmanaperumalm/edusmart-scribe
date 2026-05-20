@@ -136,7 +136,9 @@ export const generateQuiz = createServerFn({ method: "POST" })
         .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await enforceAiRateLimit(context.userId, "quiz");
     const result = await openaiJSON<{ questions: QuizQ[] }>({
+
       messages: [
         {
           role: "system",
