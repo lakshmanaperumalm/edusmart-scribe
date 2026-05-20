@@ -478,6 +478,8 @@ export const askVoiceTutor = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    await enforceAiRateLimit(userId, "voice", { limit: 60 });
+
     const { data: prof } = await supabase
       .from("profiles")
       .select("learning_style, display_name")
