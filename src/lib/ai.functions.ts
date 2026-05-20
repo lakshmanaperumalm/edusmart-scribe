@@ -677,54 +677,47 @@ export const generateDeepNotes = createServerFn({ method: "POST" })
     const language = data.language ?? "en";
 
 
-    // 1. Plan
+    // 1. Plan (fast model — small JSON payload)
     const plan = await openaiJSON<DeepPlan>({
-      model: "google/gemini-2.5-pro",
+      model: "google/gemini-2.5-flash",
       messages: [
         {
           role: "system",
           content:
-            `You are a curriculum designer. Plan a comprehensive study guide for the given topic. Output language: ${language}. Pick 10-14 well-chosen subtopics that form a logical learning order, plus a graph of edges representing how subtopics relate (prereq or related-to). Each subtopic id must be a short slug like "s1","s2"...`,
+            `You are a curriculum designer. Plan a focused study guide for the given topic. Output language: ${language}. Pick 5-8 well-chosen subtopics that form a logical learning order, plus a graph of edges representing how subtopics relate. Each subtopic id must be a short slug like "s1","s2"...`,
         },
         { role: "user", content: `Topic: ${data.topic}\nLevel: ${data.level}\nReturn JSON.` },
       ],
       schema: DeepPlanSchema,
     });
 
-    // 2. Generate chapters in batches of 3 for latency + safety
+    // 2. Generate all chapters in parallel for lowest latency
     const subs = plan.subtopics;
-    const chapters: Chapter[] = [];
-    const batchSize = 3;
-    for (let i = 0; i < subs.length; i += batchSize) {
-      const batch = subs.slice(i, i + batchSize);
-      const results = await Promise.all(batch.map(async (s) => {
-        const ch = await openaiJSON<Omit<Chapter, "id" | "title">>({
-          model: "google/gemini-2.5-flash",
-          messages: [
-            {
-              role: "system",
-              content:
-                `You are an expert tutor producing one deep chapter of a study guide.
+    const chapters: Chapter[] = await Promise.all(subs.map(async (s) => {
+      const ch = await openaiJSON<Omit<Chapter, "id" | "title">>({
+        model: "google/gemini-2.5-flash",
+        messages: [
+          {
+            role: "system",
+            content:
+              `You are an expert tutor producing one chapter of a study guide.
 Output language: ${language}. Level: ${data.level}.
-Be accurate, beginner-friendly when level=beginner, and use clear, structured prose.
-Never fabricate formulas, citations, or APIs. Every section is required — fill them all with substantive content.
-Diagrams: provide a caption and a textual description of what the diagram shows (an image is NOT generated).
+Be accurate and concise. Never fabricate formulas, citations, or APIs.
+Diagrams: caption + textual description (no image is generated).
 Tables: rows are arrays of strings matching headers length.
-Formulas: provide plain-text formulas (e.g. "E = m * c^2"). Explain each.
-MCQs: 4 choices, exactly one correct, with explanation.`,
-            },
-            {
-              role: "user",
-              content:
-                `Main topic: ${data.topic}\nChapter: ${s.title}\nFocus blurb: ${s.blurb}\nProduce the chapter as JSON.`,
-            },
-          ],
-          schema: ChapterSchema,
-        });
-        return { id: s.id, title: s.title, ...ch } as Chapter;
-      }));
-      chapters.push(...results);
-    }
+Formulas: plain text (e.g. "E = m * c^2"). MCQs: 4 choices, one correct, with explanation.`,
+          },
+          {
+            role: "user",
+            content:
+              `Main topic: ${data.topic}\nChapter: ${s.title}\nFocus: ${s.blurb}\nReturn JSON.`,
+          },
+        ],
+        schema: ChapterSchema,
+      });
+      return { id: s.id, title: s.title, ...ch } as Chapter;
+    }));
+
 
     const graph = {
       nodes: subs.map((s) => ({ id: s.id, label: s.title })),
