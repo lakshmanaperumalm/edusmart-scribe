@@ -48,7 +48,9 @@ export const generateNotes = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await enforceAiRateLimit(context.userId, "notes");
     const result = await openaiJSON<NotesResult>({
+
       messages: [
         {
           role: "system",
