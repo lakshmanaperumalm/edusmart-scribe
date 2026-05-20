@@ -25,24 +25,39 @@ export async function openaiChat(opts: {
     };
   }
 
-  const res = await fetch(GATEWAY_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify(body),
-  });
+  const MAX_RETRIES = 5;
+  let backoff = 1200;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const res = await fetch(GATEWAY_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify(body),
+    });
 
-  if (!res.ok) {
+    if (res.ok) {
+      const json = (await res.json()) as { choices: { message: { content: string } }[] };
+      return json.choices[0]?.message?.content ?? "";
+    }
+
     const txt = await res.text();
-    console.error(`[ai-gateway] error ${res.status}: ${txt.slice(0, 800)}`);
+    console.error(`[ai-gateway] error ${res.status} (attempt ${attempt + 1}): ${txt.slice(0, 400)}`);
+
+    if (res.status === 429 && attempt < MAX_RETRIES) {
+      const retryAfter = Number(res.headers.get("retry-after"));
+      const waitMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : backoff;
+      await new Promise((r) => setTimeout(r, waitMs));
+      backoff = Math.min(backoff * 2, 15000);
+      continue;
+    }
+
     if (res.status === 429) throw new Error("Rate limit reached. Please try again in a moment.");
     if (res.status === 402) throw new Error("AI credits exhausted. Please add credits to continue.");
     throw new Error("AI service request failed. Please try again.");
   }
-  const json = (await res.json()) as { choices: { message: { content: string } }[] };
-  return json.choices[0]?.message?.content ?? "";
+  throw new Error("Rate limit reached. Please try again in a moment.");
 }
 
 export async function openaiJSON<T>(opts: {
