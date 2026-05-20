@@ -3,6 +3,8 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { openaiChat, openaiJSON } from "./openai.server";
+import { enforceAiRateLimit } from "./rate-limit.server";
+
 
 // ---------------- Notes generation ----------------
 const NotesSchema = {
