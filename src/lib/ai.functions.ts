@@ -511,23 +511,101 @@ You are speaking out loud — so respond in natural spoken language:
   });
 
 // ---------------- Deep Notes Generator ----------------
-const DeepPlanSchema = {
-  name: "deep_plan",
+const DeepNotesSchema = {
+  name: "deep_notes",
   schema: {
     type: "object",
     properties: {
       overview: { type: "string", description: "1-2 paragraph high level overview of the topic" },
-      subtopics: {
-        type: "array", minItems: 5, maxItems: 8,
+      chapters: {
+        type: "array", minItems: 4, maxItems: 6,
         items: {
-
           type: "object",
           properties: {
             id: { type: "string" },
             title: { type: "string" },
-            blurb: { type: "string" },
+            introduction: { type: "string" },
+            definitions: {
+              type: "array", minItems: 2, maxItems: 4,
+              items: {
+                type: "object",
+                properties: { term: { type: "string" }, definition: { type: "string" } },
+                required: ["term", "definition"],
+              },
+            },
+            concepts: {
+              type: "array", minItems: 2, maxItems: 3,
+              items: {
+                type: "object",
+                properties: { heading: { type: "string" }, body: { type: "string" } },
+                required: ["heading", "body"],
+              },
+            },
+            examples: {
+              type: "array", minItems: 1, maxItems: 2,
+              items: {
+                type: "object",
+                properties: { title: { type: "string" }, body: { type: "string" } },
+                required: ["title", "body"],
+              },
+            },
+            diagrams: {
+              type: "array", minItems: 0, maxItems: 1,
+              items: {
+                type: "object",
+                properties: { caption: { type: "string" }, description: { type: "string" } },
+                required: ["caption", "description"],
+              },
+            },
+            key_points: { type: "array", minItems: 3, maxItems: 5, items: { type: "string" } },
+            tables: {
+              type: "array", minItems: 0, maxItems: 1,
+              items: {
+                type: "object",
+                properties: {
+                  title: { type: "string" },
+                  headers: { type: "array", minItems: 2, maxItems: 4, items: { type: "string" } },
+                  rows: { type: "array", minItems: 1, maxItems: 4, items: { type: "array", items: { type: "string" } } },
+                },
+                required: ["title", "headers", "rows"],
+              },
+            },
+            formulas: {
+              type: "array", minItems: 0, maxItems: 2,
+              items: {
+                type: "object",
+                properties: { name: { type: "string" }, formula: { type: "string" }, explanation: { type: "string" } },
+                required: ["name", "formula", "explanation"],
+              },
+            },
+            summary: { type: "string" },
+            interview_qs: {
+              type: "array", minItems: 2, maxItems: 3,
+              items: {
+                type: "object",
+                properties: { q: { type: "string" }, a: { type: "string" } },
+                required: ["q", "a"],
+              },
+            },
+            mcqs: {
+              type: "array", minItems: 2, maxItems: 3,
+              items: {
+                type: "object",
+                properties: {
+                  q: { type: "string" },
+                  choices: { type: "array", minItems: 4, maxItems: 4, items: { type: "string" } },
+                  answer_index: { type: "integer", minimum: 0, maximum: 3 },
+                  explanation: { type: "string" },
+                },
+                required: ["q", "choices", "answer_index", "explanation"],
+              },
+            },
+            revision: { type: "array", minItems: 3, maxItems: 5, items: { type: "string" } },
           },
-          required: ["id", "title", "blurb"],
+          required: [
+            "id", "title", "introduction", "definitions", "concepts", "examples", "diagrams",
+            "key_points", "tables", "formulas", "summary", "interview_qs", "mcqs", "revision",
+          ],
         },
       },
       edges: {
@@ -539,106 +617,9 @@ const DeepPlanSchema = {
         },
       },
     },
-    required: ["overview", "subtopics", "edges"],
+    required: ["overview", "chapters", "edges"],
   },
 } as const;
-
-const ChapterSchema = {
-  name: "chapter",
-  schema: {
-    type: "object",
-    properties: {
-      introduction: { type: "string" },
-      definitions: {
-        type: "array", minItems: 2, maxItems: 5,
-        items: {
-          type: "object",
-          properties: { term: { type: "string" }, definition: { type: "string" } },
-          required: ["term", "definition"],
-        },
-      },
-      concepts: {
-        type: "array", minItems: 2, maxItems: 4,
-        items: {
-          type: "object",
-          properties: { heading: { type: "string" }, body: { type: "string" } },
-          required: ["heading", "body"],
-        },
-      },
-      examples: {
-        type: "array", minItems: 1, maxItems: 3,
-        items: {
-          type: "object",
-          properties: { title: { type: "string" }, body: { type: "string" } },
-          required: ["title", "body"],
-        },
-      },
-      diagrams: {
-        type: "array", minItems: 0, maxItems: 2,
-        items: {
-          type: "object",
-          properties: { caption: { type: "string" }, description: { type: "string" } },
-          required: ["caption", "description"],
-        },
-      },
-      key_points: { type: "array", minItems: 3, maxItems: 6, items: { type: "string" } },
-      tables: {
-        type: "array", minItems: 0, maxItems: 2,
-        items: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-            headers: { type: "array", items: { type: "string" } },
-            rows: { type: "array", items: { type: "array", items: { type: "string" } } },
-          },
-          required: ["title", "headers", "rows"],
-        },
-      },
-      formulas: {
-        type: "array", minItems: 0, maxItems: 4,
-        items: {
-          type: "object",
-          properties: { name: { type: "string" }, formula: { type: "string" }, explanation: { type: "string" } },
-          required: ["name", "formula", "explanation"],
-        },
-      },
-      summary: { type: "string" },
-      interview_qs: {
-        type: "array", minItems: 2, maxItems: 4,
-        items: {
-          type: "object",
-          properties: { q: { type: "string" }, a: { type: "string" } },
-          required: ["q", "a"],
-        },
-      },
-      mcqs: {
-        type: "array", minItems: 2, maxItems: 4,
-        items: {
-          type: "object",
-          properties: {
-            q: { type: "string" },
-            choices: { type: "array", minItems: 4, maxItems: 4, items: { type: "string" } },
-            answer_index: { type: "integer", minimum: 0, maximum: 3 },
-            explanation: { type: "string" },
-          },
-          required: ["q", "choices", "answer_index", "explanation"],
-        },
-      },
-      revision: { type: "array", minItems: 3, maxItems: 6, items: { type: "string" } },
-
-    },
-    required: [
-      "introduction", "definitions", "concepts", "examples", "diagrams",
-      "key_points", "tables", "formulas", "summary", "interview_qs", "mcqs", "revision",
-    ],
-  },
-} as const;
-
-type DeepPlan = {
-  overview: string;
-  subtopics: { id: string; title: string; blurb: string }[];
-  edges: { from: string; to: string }[];
-};
 
 type Chapter = {
   id: string;
@@ -657,6 +638,19 @@ type Chapter = {
   revision: string[];
 };
 
+type DeepNotesDraft = {
+  overview: string;
+  chapters: Chapter[];
+  edges: { from: string; to: string }[];
+};
+
+const asText = (value: unknown, fallback = "") => (typeof value === "string" ? value.trim() : fallback);
+const asTextArray = (value: unknown, max: number) =>
+  (Array.isArray(value) ? value : [])
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .map((item) => item.trim())
+    .slice(0, max);
+
 export const generateDeepNotes = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: {
@@ -672,66 +666,139 @@ export const generateDeepNotes = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    // Deep notes use many AI calls in one request — count as several.
     await enforceAiRateLimit(userId, "deep_notes", { limit: 6, windowMinutes: 60 });
     const language = data.language ?? "en";
 
-
-    // 1. Plan (fast model — small JSON payload)
-    const plan = await openaiJSON<DeepPlan>({
+    const draft = await openaiJSON<DeepNotesDraft>({
       model: "google/gemini-2.5-flash",
       messages: [
         {
           role: "system",
           content:
-            `You are a curriculum designer. Plan a focused study guide for the given topic. Output language: ${language}. Pick 5-8 well-chosen subtopics that form a logical learning order, plus a graph of edges representing how subtopics relate. Each subtopic id must be a short slug like "s1","s2"...`,
+            `You are an expert tutor creating a premium study guide that must finish quickly.
+Output language: ${language}. Level: ${data.level}.
+Return one focused JSON document with 4-6 essential chapters in a clear learning order.
+Keep explanations detailed but compact enough for fast generation.
+Use plain text only. Never fabricate formulas, citations, statistics, or APIs.
+Diagrams are placeholders with caption + description only.
+Tables must have rows matching the number of headers.
+MCQs must always have exactly 4 choices and one correct answer.`,
         },
-        { role: "user", content: `Topic: ${data.topic}\nLevel: ${data.level}\nReturn JSON.` },
+        {
+          role: "user",
+          content:
+            `Topic: ${data.topic}\nCreate a study guide that includes introduction, definitions, concepts, examples, diagram placeholders, key points, tables when useful, formulas when relevant, summary, interview questions, MCQs, and revision notes. Return JSON.`,
+        },
       ],
-      schema: DeepPlanSchema,
+      schema: DeepNotesSchema,
     });
 
-    // 2. Generate chapters with limited concurrency to avoid upstream rate limits
-    const subs = plan.subtopics;
-    const chapters: Chapter[] = new Array(subs.length);
-    const CONCURRENCY = 2;
-    let cursor = 0;
-    async function worker() {
-      while (true) {
-        const i = cursor++;
-        if (i >= subs.length) return;
-        const s = subs[i];
-        const ch = await openaiJSON<Omit<Chapter, "id" | "title">>({
-          model: "google/gemini-2.5-flash",
-          messages: [
-            {
-              role: "system",
-              content:
-                `You are an expert tutor producing one chapter of a study guide.
-Output language: ${language}. Level: ${data.level}.
-Be accurate and concise. Never fabricate formulas, citations, or APIs.
-Diagrams: caption + textual description (no image is generated).
-Tables: rows are arrays of strings matching headers length.
-Formulas: plain text (e.g. "E = m * c^2"). MCQs: 4 choices, one correct, with explanation.`,
-            },
-            {
-              role: "user",
-              content:
-                `Main topic: ${data.topic}\nChapter: ${s.title}\nFocus: ${s.blurb}\nReturn JSON.`,
-            },
-          ],
-          schema: ChapterSchema,
-        });
-        chapters[i] = { id: s.id, title: s.title, ...ch } as Chapter;
-      }
+    const chapters = (Array.isArray(draft.chapters) ? draft.chapters : []).slice(0, 6).map((rawChapter, idx) => {
+      const definitions = Array.isArray(rawChapter?.definitions)
+        ? rawChapter.definitions
+            .map((d) => ({ term: asText(d?.term), definition: asText(d?.definition) }))
+            .filter((d) => d.term && d.definition)
+            .slice(0, 5)
+        : [];
+      const concepts = Array.isArray(rawChapter?.concepts)
+        ? rawChapter.concepts
+            .map((c) => ({ heading: asText(c?.heading), body: asText(c?.body) }))
+            .filter((c) => c.heading && c.body)
+            .slice(0, 4)
+        : [];
+      const examples = Array.isArray(rawChapter?.examples)
+        ? rawChapter.examples
+            .map((e) => ({ title: asText(e?.title), body: asText(e?.body) }))
+            .filter((e) => e.title && e.body)
+            .slice(0, 3)
+        : [];
+      const diagrams = Array.isArray(rawChapter?.diagrams)
+        ? rawChapter.diagrams
+            .map((d) => ({ caption: asText(d?.caption), description: asText(d?.description) }))
+            .filter((d) => d.caption && d.description)
+            .slice(0, 2)
+        : [];
+      const tables = Array.isArray(rawChapter?.tables)
+        ? rawChapter.tables
+            .map((table) => {
+              const headers = asTextArray(table?.headers, 4);
+              const rows = Array.isArray(table?.rows)
+                ? table.rows
+                    .filter(Array.isArray)
+                    .map((row) => {
+                      const cells = (row as unknown[]).map((cell) => asText(cell)).slice(0, headers.length);
+                      while (cells.length < headers.length) cells.push("");
+                      return cells;
+                    })
+                    .filter((row) => row.some((cell) => cell.length > 0))
+                    .slice(0, 4)
+                : [];
+              return { title: asText(table?.title), headers, rows };
+            })
+            .filter((table) => table.title && table.headers.length >= 2 && table.rows.length > 0)
+            .slice(0, 2)
+        : [];
+      const formulas = Array.isArray(rawChapter?.formulas)
+        ? rawChapter.formulas
+            .map((f) => ({ name: asText(f?.name), formula: asText(f?.formula), explanation: asText(f?.explanation) }))
+            .filter((f) => f.name && f.formula && f.explanation)
+            .slice(0, 4)
+        : [];
+      const interview_qs = Array.isArray(rawChapter?.interview_qs)
+        ? rawChapter.interview_qs
+            .map((qa) => ({ q: asText(qa?.q), a: asText(qa?.a) }))
+            .filter((qa) => qa.q && qa.a)
+            .slice(0, 4)
+        : [];
+      const mcqs = Array.isArray(rawChapter?.mcqs)
+        ? rawChapter.mcqs
+            .map((mcq) => {
+              const choices = asTextArray(mcq?.choices, 4);
+              while (choices.length < 4) choices.push(`Option ${String.fromCharCode(65 + choices.length)}`);
+              return {
+                q: asText(mcq?.q),
+                choices,
+                answer_index:
+                  typeof mcq?.answer_index === "number" && mcq.answer_index >= 0 && mcq.answer_index < 4
+                    ? mcq.answer_index
+                    : 0,
+                explanation: asText(mcq?.explanation),
+              };
+            })
+            .filter((mcq) => mcq.q && mcq.explanation)
+            .slice(0, 4)
+        : [];
+
+      return {
+        id: asText(rawChapter?.id, `s${idx + 1}`),
+        title: asText(rawChapter?.title, `Chapter ${idx + 1}`),
+        introduction: asText(rawChapter?.introduction, asText(rawChapter?.summary, "Overview unavailable.")),
+        definitions,
+        concepts,
+        examples,
+        diagrams,
+        key_points: asTextArray(rawChapter?.key_points, 6),
+        tables,
+        formulas,
+        summary: asText(rawChapter?.summary, asTextArray(rawChapter?.key_points, 3).join(" ") || "Summary unavailable."),
+        interview_qs,
+        mcqs,
+        revision: asTextArray(rawChapter?.revision, 6),
+      } satisfies Chapter;
+    }).filter((chapter) => chapter.title && chapter.summary);
+
+    if (!chapters.length) {
+      throw new Error("Could not generate detailed notes. Please try again.");
     }
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, subs.length) }, worker));
 
-
+    const validIds = new Set(chapters.map((chapter) => chapter.id));
+    const edges = (Array.isArray(draft.edges) ? draft.edges : [])
+      .map((edge) => ({ from: asText(edge?.from), to: asText(edge?.to) }))
+      .filter((edge) => edge.from !== edge.to && validIds.has(edge.from) && validIds.has(edge.to));
 
     const graph = {
-      nodes: subs.map((s) => ({ id: s.id, label: s.title })),
-      edges: plan.edges.filter((e) => subs.some((s) => s.id === e.from) && subs.some((s) => s.id === e.to)),
+      nodes: chapters.map((chapter) => ({ id: chapter.id, label: chapter.title })),
+      edges: edges.length ? edges : chapters.slice(1).map((chapter, idx) => ({ from: chapters[idx].id, to: chapter.id })),
     };
     const toc = chapters.map((c) => ({ id: c.id, title: c.title }));
 
@@ -740,7 +807,7 @@ Formulas: plain text (e.g. "E = m * c^2"). MCQs: 4 choices, one correct, with ex
       topic: data.topic,
       level: data.level,
       language,
-      summary: plan.overview,
+      summary: asText(draft.overview, chapters[0]?.summary ?? ""),
       content: chapters.map((c) => `# ${c.title}\n\n${c.summary}`).join("\n\n"),
       key_points: chapters.flatMap((c) => c.key_points).slice(0, 12),
       flashcards: chapters.flatMap((c) => c.interview_qs.map((qa) => ({ q: qa.q, a: qa.a }))).slice(0, 20),
