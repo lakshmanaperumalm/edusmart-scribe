@@ -184,7 +184,9 @@ export const submitQuiz = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    await enforceAiRateLimit(userId, "quiz_submit");
     const { data: quiz, error } = await supabase
+
       .from("quizzes")
       .select("id, subject, topic, difficulty, questions")
       .eq("id", data.quizId)
