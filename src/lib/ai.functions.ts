@@ -3,6 +3,8 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { openaiChat, openaiJSON } from "./openai.server";
+import { enforceAiRateLimit } from "./rate-limit.server";
+
 
 // ---------------- Notes generation ----------------
 const NotesSchema = {
@@ -46,7 +48,9 @@ export const generateNotes = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await enforceAiRateLimit(context.userId, "notes");
     const result = await openaiJSON<NotesResult>({
+
       messages: [
         {
           role: "system",
@@ -132,7 +136,9 @@ export const generateQuiz = createServerFn({ method: "POST" })
         .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await enforceAiRateLimit(context.userId, "quiz");
     const result = await openaiJSON<{ questions: QuizQ[] }>({
+
       messages: [
         {
           role: "system",
@@ -178,7 +184,9 @@ export const submitQuiz = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    await enforceAiRateLimit(userId, "quiz_submit");
     const { data: quiz, error } = await supabase
+
       .from("quizzes")
       .select("id, subject, topic, difficulty, questions")
       .eq("id", data.quizId)
@@ -218,7 +226,7 @@ export const submitQuiz = createServerFn({ method: "POST" })
       // ignore feedback errors
     }
 
-    const { data: attempt, error: aerr } = await supabase
+    const { data: attempt, error: aerr } = await supabaseAdmin
       .from("quiz_attempts")
       .insert({
         user_id: userId,
@@ -301,6 +309,8 @@ export const generateStudyPlan = createServerFn({ method: "POST" })
   .inputValidator((d: { goal: string }) => z.object({ goal: z.string().min(3).max(300) }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    await enforceAiRateLimit(userId, "study_plan");
+
     const [{ data: prof }, { data: events }] = await Promise.all([
       supabase
         .from("profiles")
@@ -352,6 +362,9 @@ export const sendChatMessage = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    await enforceAiRateLimit(userId, "chat", { limit: 60 });
+
+
 
     // Verify thread ownership
     const { data: thread } = await supabase
@@ -465,6 +478,8 @@ export const askVoiceTutor = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    await enforceAiRateLimit(userId, "voice", { limit: 60 });
+
     const { data: prof } = await supabase
       .from("profiles")
       .select("learning_style, display_name")
@@ -655,7 +670,10 @@ export const generateDeepNotes = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    // Deep notes use many AI calls in one request — count as several.
+    await enforceAiRateLimit(userId, "deep_notes", { limit: 6, windowMinutes: 60 });
     const language = data.language ?? "en";
+
 
     // 1. Plan
     const plan = await openaiJSON<DeepPlan>({
