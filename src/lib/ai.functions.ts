@@ -670,7 +670,10 @@ export const generateDeepNotes = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    // Deep notes use many AI calls in one request — count as several.
+    await enforceAiRateLimit(userId, "deep_notes", { limit: 6, windowMinutes: 60 });
     const language = data.language ?? "en";
+
 
     // 1. Plan
     const plan = await openaiJSON<DeepPlan>({
