@@ -518,8 +518,9 @@ const DeepPlanSchema = {
     properties: {
       overview: { type: "string", description: "1-2 paragraph high level overview of the topic" },
       subtopics: {
-        type: "array", minItems: 8, maxItems: 14,
+        type: "array", minItems: 5, maxItems: 8,
         items: {
+
           type: "object",
           properties: {
             id: { type: "string" },
