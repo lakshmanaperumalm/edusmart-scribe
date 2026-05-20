@@ -362,6 +362,9 @@ export const sendChatMessage = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    await enforceAiRateLimit(userId, "chat", { limit: 60 });
+
+
 
     // Verify thread ownership
     const { data: thread } = await supabase
