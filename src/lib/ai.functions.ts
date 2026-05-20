@@ -518,8 +518,9 @@ const DeepPlanSchema = {
     properties: {
       overview: { type: "string", description: "1-2 paragraph high level overview of the topic" },
       subtopics: {
-        type: "array", minItems: 8, maxItems: 14,
+        type: "array", minItems: 5, maxItems: 8,
         items: {
+
           type: "object",
           properties: {
             id: { type: "string" },
@@ -549,7 +550,7 @@ const ChapterSchema = {
     properties: {
       introduction: { type: "string" },
       definitions: {
-        type: "array", minItems: 2, maxItems: 8,
+        type: "array", minItems: 2, maxItems: 5,
         items: {
           type: "object",
           properties: { term: { type: "string" }, definition: { type: "string" } },
@@ -557,7 +558,7 @@ const ChapterSchema = {
         },
       },
       concepts: {
-        type: "array", minItems: 3, maxItems: 8,
+        type: "array", minItems: 2, maxItems: 4,
         items: {
           type: "object",
           properties: { heading: { type: "string" }, body: { type: "string" } },
@@ -565,7 +566,7 @@ const ChapterSchema = {
         },
       },
       examples: {
-        type: "array", minItems: 2, maxItems: 6,
+        type: "array", minItems: 1, maxItems: 3,
         items: {
           type: "object",
           properties: { title: { type: "string" }, body: { type: "string" } },
@@ -573,16 +574,16 @@ const ChapterSchema = {
         },
       },
       diagrams: {
-        type: "array", minItems: 1, maxItems: 4,
+        type: "array", minItems: 0, maxItems: 2,
         items: {
           type: "object",
           properties: { caption: { type: "string" }, description: { type: "string" } },
           required: ["caption", "description"],
         },
       },
-      key_points: { type: "array", minItems: 4, maxItems: 10, items: { type: "string" } },
+      key_points: { type: "array", minItems: 3, maxItems: 6, items: { type: "string" } },
       tables: {
-        type: "array", minItems: 0, maxItems: 3,
+        type: "array", minItems: 0, maxItems: 2,
         items: {
           type: "object",
           properties: {
@@ -594,7 +595,7 @@ const ChapterSchema = {
         },
       },
       formulas: {
-        type: "array", minItems: 0, maxItems: 8,
+        type: "array", minItems: 0, maxItems: 4,
         items: {
           type: "object",
           properties: { name: { type: "string" }, formula: { type: "string" }, explanation: { type: "string" } },
@@ -603,7 +604,7 @@ const ChapterSchema = {
       },
       summary: { type: "string" },
       interview_qs: {
-        type: "array", minItems: 3, maxItems: 8,
+        type: "array", minItems: 2, maxItems: 4,
         items: {
           type: "object",
           properties: { q: { type: "string" }, a: { type: "string" } },
@@ -611,7 +612,7 @@ const ChapterSchema = {
         },
       },
       mcqs: {
-        type: "array", minItems: 3, maxItems: 6,
+        type: "array", minItems: 2, maxItems: 4,
         items: {
           type: "object",
           properties: {
@@ -623,7 +624,8 @@ const ChapterSchema = {
           required: ["q", "choices", "answer_index", "explanation"],
         },
       },
-      revision: { type: "array", minItems: 3, maxItems: 10, items: { type: "string" } },
+      revision: { type: "array", minItems: 3, maxItems: 6, items: { type: "string" } },
+
     },
     required: [
       "introduction", "definitions", "concepts", "examples", "diagrams",
@@ -675,54 +677,47 @@ export const generateDeepNotes = createServerFn({ method: "POST" })
     const language = data.language ?? "en";
 
 
-    // 1. Plan
+    // 1. Plan (fast model — small JSON payload)
     const plan = await openaiJSON<DeepPlan>({
-      model: "google/gemini-2.5-pro",
+      model: "google/gemini-2.5-flash",
       messages: [
         {
           role: "system",
           content:
-            `You are a curriculum designer. Plan a comprehensive study guide for the given topic. Output language: ${language}. Pick 10-14 well-chosen subtopics that form a logical learning order, plus a graph of edges representing how subtopics relate (prereq or related-to). Each subtopic id must be a short slug like "s1","s2"...`,
+            `You are a curriculum designer. Plan a focused study guide for the given topic. Output language: ${language}. Pick 5-8 well-chosen subtopics that form a logical learning order, plus a graph of edges representing how subtopics relate. Each subtopic id must be a short slug like "s1","s2"...`,
         },
         { role: "user", content: `Topic: ${data.topic}\nLevel: ${data.level}\nReturn JSON.` },
       ],
       schema: DeepPlanSchema,
     });
 
-    // 2. Generate chapters in batches of 3 for latency + safety
+    // 2. Generate all chapters in parallel for lowest latency
     const subs = plan.subtopics;
-    const chapters: Chapter[] = [];
-    const batchSize = 3;
-    for (let i = 0; i < subs.length; i += batchSize) {
-      const batch = subs.slice(i, i + batchSize);
-      const results = await Promise.all(batch.map(async (s) => {
-        const ch = await openaiJSON<Omit<Chapter, "id" | "title">>({
-          model: "google/gemini-2.5-flash",
-          messages: [
-            {
-              role: "system",
-              content:
-                `You are an expert tutor producing one deep chapter of a study guide.
+    const chapters: Chapter[] = await Promise.all(subs.map(async (s) => {
+      const ch = await openaiJSON<Omit<Chapter, "id" | "title">>({
+        model: "google/gemini-2.5-flash",
+        messages: [
+          {
+            role: "system",
+            content:
+              `You are an expert tutor producing one chapter of a study guide.
 Output language: ${language}. Level: ${data.level}.
-Be accurate, beginner-friendly when level=beginner, and use clear, structured prose.
-Never fabricate formulas, citations, or APIs. Every section is required — fill them all with substantive content.
-Diagrams: provide a caption and a textual description of what the diagram shows (an image is NOT generated).
+Be accurate and concise. Never fabricate formulas, citations, or APIs.
+Diagrams: caption + textual description (no image is generated).
 Tables: rows are arrays of strings matching headers length.
-Formulas: provide plain-text formulas (e.g. "E = m * c^2"). Explain each.
-MCQs: 4 choices, exactly one correct, with explanation.`,
-            },
-            {
-              role: "user",
-              content:
-                `Main topic: ${data.topic}\nChapter: ${s.title}\nFocus blurb: ${s.blurb}\nProduce the chapter as JSON.`,
-            },
-          ],
-          schema: ChapterSchema,
-        });
-        return { id: s.id, title: s.title, ...ch } as Chapter;
-      }));
-      chapters.push(...results);
-    }
+Formulas: plain text (e.g. "E = m * c^2"). MCQs: 4 choices, one correct, with explanation.`,
+          },
+          {
+            role: "user",
+            content:
+              `Main topic: ${data.topic}\nChapter: ${s.title}\nFocus: ${s.blurb}\nReturn JSON.`,
+          },
+        ],
+        schema: ChapterSchema,
+      });
+      return { id: s.id, title: s.title, ...ch } as Chapter;
+    }));
+
 
     const graph = {
       nodes: subs.map((s) => ({ id: s.id, label: s.title })),
