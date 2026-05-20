@@ -14,6 +14,27 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_call_log: {
+        Row: {
+          created_at: string
+          id: string
+          kind: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          kind: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          kind?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       badges: {
         Row: {
           code: string
@@ -296,7 +317,6 @@ export type Database = {
           bio: string | null
           created_at: string
           display_name: string | null
-          email: string | null
           goals: string[]
           id: string
           interests: string[]
@@ -313,7 +333,6 @@ export type Database = {
           bio?: string | null
           created_at?: string
           display_name?: string | null
-          email?: string | null
           goals?: string[]
           id?: string
           interests?: string[]
@@ -330,7 +349,6 @@ export type Database = {
           bio?: string | null
           created_at?: string
           display_name?: string | null
-          email?: string | null
           goals?: string[]
           id?: string
           interests?: string[]
