@@ -691,32 +691,42 @@ export const generateDeepNotes = createServerFn({ method: "POST" })
       schema: DeepPlanSchema,
     });
 
-    // 2. Generate all chapters in parallel for lowest latency
+    // 2. Generate chapters with limited concurrency to avoid upstream rate limits
     const subs = plan.subtopics;
-    const chapters: Chapter[] = await Promise.all(subs.map(async (s) => {
-      const ch = await openaiJSON<Omit<Chapter, "id" | "title">>({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          {
-            role: "system",
-            content:
-              `You are an expert tutor producing one chapter of a study guide.
+    const chapters: Chapter[] = new Array(subs.length);
+    const CONCURRENCY = 2;
+    let cursor = 0;
+    async function worker() {
+      while (true) {
+        const i = cursor++;
+        if (i >= subs.length) return;
+        const s = subs[i];
+        const ch = await openaiJSON<Omit<Chapter, "id" | "title">>({
+          model: "google/gemini-2.5-flash",
+          messages: [
+            {
+              role: "system",
+              content:
+                `You are an expert tutor producing one chapter of a study guide.
 Output language: ${language}. Level: ${data.level}.
 Be accurate and concise. Never fabricate formulas, citations, or APIs.
 Diagrams: caption + textual description (no image is generated).
 Tables: rows are arrays of strings matching headers length.
 Formulas: plain text (e.g. "E = m * c^2"). MCQs: 4 choices, one correct, with explanation.`,
-          },
-          {
-            role: "user",
-            content:
-              `Main topic: ${data.topic}\nChapter: ${s.title}\nFocus: ${s.blurb}\nReturn JSON.`,
-          },
-        ],
-        schema: ChapterSchema,
-      });
-      return { id: s.id, title: s.title, ...ch } as Chapter;
-    }));
+            },
+            {
+              role: "user",
+              content:
+                `Main topic: ${data.topic}\nChapter: ${s.title}\nFocus: ${s.blurb}\nReturn JSON.`,
+            },
+          ],
+          schema: ChapterSchema,
+        });
+        chapters[i] = { id: s.id, title: s.title, ...ch } as Chapter;
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, subs.length) }, worker));
+
 
 
     const graph = {
