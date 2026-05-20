@@ -226,7 +226,7 @@ export const submitQuiz = createServerFn({ method: "POST" })
       // ignore feedback errors
     }
 
-    const { data: attempt, error: aerr } = await supabase
+    const { data: attempt, error: aerr } = await supabaseAdmin
       .from("quiz_attempts")
       .insert({
         user_id: userId,
