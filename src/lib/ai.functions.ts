@@ -550,7 +550,7 @@ const ChapterSchema = {
     properties: {
       introduction: { type: "string" },
       definitions: {
-        type: "array", minItems: 2, maxItems: 8,
+        type: "array", minItems: 2, maxItems: 5,
         items: {
           type: "object",
           properties: { term: { type: "string" }, definition: { type: "string" } },
@@ -558,7 +558,7 @@ const ChapterSchema = {
         },
       },
       concepts: {
-        type: "array", minItems: 3, maxItems: 8,
+        type: "array", minItems: 2, maxItems: 4,
         items: {
           type: "object",
           properties: { heading: { type: "string" }, body: { type: "string" } },
@@ -566,7 +566,7 @@ const ChapterSchema = {
         },
       },
       examples: {
-        type: "array", minItems: 2, maxItems: 6,
+        type: "array", minItems: 1, maxItems: 3,
         items: {
           type: "object",
           properties: { title: { type: "string" }, body: { type: "string" } },
@@ -574,16 +574,16 @@ const ChapterSchema = {
         },
       },
       diagrams: {
-        type: "array", minItems: 1, maxItems: 4,
+        type: "array", minItems: 0, maxItems: 2,
         items: {
           type: "object",
           properties: { caption: { type: "string" }, description: { type: "string" } },
           required: ["caption", "description"],
         },
       },
-      key_points: { type: "array", minItems: 4, maxItems: 10, items: { type: "string" } },
+      key_points: { type: "array", minItems: 3, maxItems: 6, items: { type: "string" } },
       tables: {
-        type: "array", minItems: 0, maxItems: 3,
+        type: "array", minItems: 0, maxItems: 2,
         items: {
           type: "object",
           properties: {
@@ -595,7 +595,7 @@ const ChapterSchema = {
         },
       },
       formulas: {
-        type: "array", minItems: 0, maxItems: 8,
+        type: "array", minItems: 0, maxItems: 4,
         items: {
           type: "object",
           properties: { name: { type: "string" }, formula: { type: "string" }, explanation: { type: "string" } },
@@ -604,7 +604,7 @@ const ChapterSchema = {
       },
       summary: { type: "string" },
       interview_qs: {
-        type: "array", minItems: 3, maxItems: 8,
+        type: "array", minItems: 2, maxItems: 4,
         items: {
           type: "object",
           properties: { q: { type: "string" }, a: { type: "string" } },
@@ -612,7 +612,7 @@ const ChapterSchema = {
         },
       },
       mcqs: {
-        type: "array", minItems: 3, maxItems: 6,
+        type: "array", minItems: 2, maxItems: 4,
         items: {
           type: "object",
           properties: {
@@ -624,7 +624,8 @@ const ChapterSchema = {
           required: ["q", "choices", "answer_index", "explanation"],
         },
       },
-      revision: { type: "array", minItems: 3, maxItems: 10, items: { type: "string" } },
+      revision: { type: "array", minItems: 3, maxItems: 6, items: { type: "string" } },
+
     },
     required: [
       "introduction", "definitions", "concepts", "examples", "diagrams",
