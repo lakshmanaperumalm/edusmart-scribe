@@ -309,6 +309,8 @@ export const generateStudyPlan = createServerFn({ method: "POST" })
   .inputValidator((d: { goal: string }) => z.object({ goal: z.string().min(3).max(300) }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    await enforceAiRateLimit(userId, "study_plan");
+
     const [{ data: prof }, { data: events }] = await Promise.all([
       supabase
         .from("profiles")
