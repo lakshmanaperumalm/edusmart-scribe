@@ -55,7 +55,8 @@ export async function openaiChat(opts: {
 
     if (res.status === 429) throw new Error("Rate limit reached. Please try again in a moment.");
     if (res.status === 402) throw new Error("AI credits exhausted. Please add credits to continue.");
-    throw new Error("AI service request failed. Please try again.");
+    const snippet = txt.slice(0, 200).replace(/\s+/g, " ");
+    throw new Error(`AI service request failed (${res.status}): ${snippet}`);
   }
   throw new Error("Rate limit reached. Please try again in a moment.");
 }
