@@ -669,46 +669,47 @@ export const generateDeepNotes = createServerFn({ method: "POST" })
           content:
             `You are an expert tutor creating a premium study guide that must finish quickly.
 Output language: ${language}. Level: ${data.level}.
-Return one focused JSON document with 4-6 essential chapters in a clear learning order.
-Keep explanations detailed but compact enough for fast generation.
+Return one focused JSON document with 3-4 essential chapters in a clear learning order.
+Keep explanations detailed but concise enough to finish in one fast response.
 Use plain text only. Never fabricate formulas, citations, statistics, or APIs.
 Diagrams are placeholders with caption + description only.
 Tables must have rows matching the number of headers.
-MCQs must always have exactly 4 choices and one correct answer.`,
+MCQs must always have exactly 4 choices and one correct answer.
+Prefer only the most useful fields for each chapter. Skip formulas, tables, diagrams, interview questions, or MCQs when they are not genuinely helpful.`,
         },
         {
           role: "user",
           content:
-            `Topic: ${data.topic}\nCreate a study guide that includes introduction, definitions, concepts, examples, diagram placeholders, key points, tables when useful, formulas when relevant, summary, interview questions, MCQs, and revision notes. Return JSON.`,
+            `Topic: ${data.topic}\nCreate a study guide with a short overview and 3-4 chapters. For each chapter, prioritize introduction, concepts, key points, summary, and brief revision notes. Add definitions, examples, MCQs, interview questions, tables, formulas, or diagram placeholders only when clearly useful. Return JSON.`,
         },
       ],
       schema: DeepNotesSchema,
     });
 
-    const chapters = (Array.isArray(draft.chapters) ? draft.chapters : []).slice(0, 6).map((rawChapter, idx) => {
+    const chapters = (Array.isArray(draft.chapters) ? draft.chapters : []).slice(0, 4).map((rawChapter, idx) => {
       const definitions = Array.isArray(rawChapter?.definitions)
         ? rawChapter.definitions
             .map((d) => ({ term: asText(d?.term), definition: asText(d?.definition) }))
             .filter((d) => d.term && d.definition)
-            .slice(0, 5)
+            .slice(0, 3)
         : [];
       const concepts = Array.isArray(rawChapter?.concepts)
         ? rawChapter.concepts
             .map((c) => ({ heading: asText(c?.heading), body: asText(c?.body) }))
             .filter((c) => c.heading && c.body)
-            .slice(0, 4)
+            .slice(0, 3)
         : [];
       const examples = Array.isArray(rawChapter?.examples)
         ? rawChapter.examples
             .map((e) => ({ title: asText(e?.title), body: asText(e?.body) }))
             .filter((e) => e.title && e.body)
-            .slice(0, 3)
+            .slice(0, 2)
         : [];
       const diagrams = Array.isArray(rawChapter?.diagrams)
         ? rawChapter.diagrams
             .map((d) => ({ caption: asText(d?.caption), description: asText(d?.description) }))
             .filter((d) => d.caption && d.description)
-            .slice(0, 2)
+            .slice(0, 1)
         : [];
       const tables = Array.isArray(rawChapter?.tables)
         ? rawChapter.tables
@@ -723,24 +724,24 @@ MCQs must always have exactly 4 choices and one correct answer.`,
                       return cells;
                     })
                     .filter((row) => row.some((cell) => cell.length > 0))
-                    .slice(0, 4)
+                    .slice(0, 3)
                 : [];
               return { title: asText(table?.title), headers, rows };
             })
             .filter((table) => table.title && table.headers.length >= 2 && table.rows.length > 0)
-            .slice(0, 2)
+            .slice(0, 1)
         : [];
       const formulas = Array.isArray(rawChapter?.formulas)
         ? rawChapter.formulas
             .map((f) => ({ name: asText(f?.name), formula: asText(f?.formula), explanation: asText(f?.explanation) }))
             .filter((f) => f.name && f.formula && f.explanation)
-            .slice(0, 4)
+            .slice(0, 2)
         : [];
       const interview_qs = Array.isArray(rawChapter?.interview_qs)
         ? rawChapter.interview_qs
             .map((qa) => ({ q: asText(qa?.q), a: asText(qa?.a) }))
             .filter((qa) => qa.q && qa.a)
-            .slice(0, 4)
+            .slice(0, 2)
         : [];
       const mcqs = Array.isArray(rawChapter?.mcqs)
         ? rawChapter.mcqs
@@ -758,7 +759,7 @@ MCQs must always have exactly 4 choices and one correct answer.`,
               };
             })
             .filter((mcq) => mcq.q && mcq.explanation)
-            .slice(0, 4)
+            .slice(0, 2)
         : [];
 
       return {
@@ -769,13 +770,13 @@ MCQs must always have exactly 4 choices and one correct answer.`,
         concepts,
         examples,
         diagrams,
-        key_points: asTextArray(rawChapter?.key_points, 6),
+         key_points: asTextArray(rawChapter?.key_points, 4),
         tables,
         formulas,
         summary: asText(rawChapter?.summary, asTextArray(rawChapter?.key_points, 3).join(" ") || "Summary unavailable."),
         interview_qs,
         mcqs,
-        revision: asTextArray(rawChapter?.revision, 6),
+         revision: asTextArray(rawChapter?.revision, 4),
       } satisfies Chapter;
     }).filter((chapter) => chapter.title && chapter.summary);
 
