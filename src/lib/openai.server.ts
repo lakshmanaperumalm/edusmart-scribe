@@ -25,17 +25,29 @@ export async function openaiChat(opts: {
     };
   }
 
+  const RETRYABLE_STATUSES = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
   const MAX_RETRIES = 5;
   let backoff = 1200;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const res = await fetch(GATEWAY_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify(body),
-    });
+    let res: Response;
+    try {
+      res = await fetch(GATEWAY_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (error) {
+      console.error(`[ai-gateway] network error (attempt ${attempt + 1})`, error);
+      if (attempt < MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, backoff));
+        backoff = Math.min(backoff * 2, 15000);
+        continue;
+      }
+      throw new Error("AI service is temporarily unavailable. Please try again in a moment.");
+    }
 
     if (res.ok) {
       const json = (await res.json()) as { choices: { message: { content: string } }[] };
@@ -45,7 +57,7 @@ export async function openaiChat(opts: {
     const txt = await res.text();
     console.error(`[ai-gateway] error ${res.status} (attempt ${attempt + 1}): ${txt.slice(0, 400)}`);
 
-    if (res.status === 429 && attempt < MAX_RETRIES) {
+    if (RETRYABLE_STATUSES.has(res.status) && attempt < MAX_RETRIES) {
       const retryAfter = Number(res.headers.get("retry-after"));
       const waitMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : backoff;
       await new Promise((r) => setTimeout(r, waitMs));
@@ -55,10 +67,13 @@ export async function openaiChat(opts: {
 
     if (res.status === 429) throw new Error("Rate limit reached. Please try again in a moment.");
     if (res.status === 402) throw new Error("AI credits exhausted. Please add credits to continue.");
+    if (res.status === 504 || txt.toLowerCase().includes("upstream request timeout")) {
+      throw new Error("The AI request timed out upstream. Please try again in a moment.");
+    }
     const snippet = txt.slice(0, 200).replace(/\s+/g, " ");
     throw new Error(`AI service request failed (${res.status}): ${snippet}`);
   }
-  throw new Error("Rate limit reached. Please try again in a moment.");
+  throw new Error("The AI request timed out upstream. Please try again in a moment.");
 }
 
 export async function openaiJSON<T>(opts: {
