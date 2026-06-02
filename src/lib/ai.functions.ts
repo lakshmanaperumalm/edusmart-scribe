@@ -516,9 +516,9 @@ const DeepNotesSchema = {
   schema: {
     type: "object",
     properties: {
-      overview: { type: "string", description: "1-2 paragraph high level overview of the topic" },
+      overview: { type: "string" },
       chapters: {
-        type: "array", minItems: 4, maxItems: 6,
+        type: "array",
         items: {
           type: "object",
           properties: {
@@ -526,86 +526,79 @@ const DeepNotesSchema = {
             title: { type: "string" },
             introduction: { type: "string" },
             definitions: {
-              type: "array", minItems: 2, maxItems: 4,
+              type: "array",
               items: {
                 type: "object",
                 properties: { term: { type: "string" }, definition: { type: "string" } },
-                required: ["term", "definition"],
               },
             },
             concepts: {
-              type: "array", minItems: 2, maxItems: 3,
+              type: "array",
               items: {
                 type: "object",
                 properties: { heading: { type: "string" }, body: { type: "string" } },
-                required: ["heading", "body"],
               },
             },
             examples: {
-              type: "array", minItems: 1, maxItems: 2,
+              type: "array",
               items: {
                 type: "object",
                 properties: { title: { type: "string" }, body: { type: "string" } },
-                required: ["title", "body"],
               },
             },
             diagrams: {
-              type: "array", minItems: 0, maxItems: 1,
+              type: "array",
               items: {
                 type: "object",
                 properties: { caption: { type: "string" }, description: { type: "string" } },
-                required: ["caption", "description"],
               },
             },
-            key_points: { type: "array", minItems: 3, maxItems: 5, items: { type: "string" } },
+            key_points: { type: "array", items: { type: "string" } },
             tables: {
-              type: "array", minItems: 0, maxItems: 1,
+              type: "array",
               items: {
                 type: "object",
                 properties: {
                   title: { type: "string" },
-                  headers: { type: "array", minItems: 2, maxItems: 4, items: { type: "string" } },
-                  rows: { type: "array", minItems: 1, maxItems: 4, items: { type: "array", items: { type: "string" } } },
+                  headers: { type: "array", items: { type: "string" } },
+                  rows: { type: "array", items: { type: "array", items: { type: "string" } } },
                 },
-                required: ["title", "headers", "rows"],
               },
             },
             formulas: {
-              type: "array", minItems: 0, maxItems: 2,
+              type: "array",
               items: {
                 type: "object",
-                properties: { name: { type: "string" }, formula: { type: "string" }, explanation: { type: "string" } },
-                required: ["name", "formula", "explanation"],
+                properties: {
+                  name: { type: "string" },
+                  formula: { type: "string" },
+                  explanation: { type: "string" },
+                },
               },
             },
             summary: { type: "string" },
             interview_qs: {
-              type: "array", minItems: 2, maxItems: 3,
+              type: "array",
               items: {
                 type: "object",
                 properties: { q: { type: "string" }, a: { type: "string" } },
-                required: ["q", "a"],
               },
             },
             mcqs: {
-              type: "array", minItems: 2, maxItems: 3,
+              type: "array",
               items: {
                 type: "object",
                 properties: {
                   q: { type: "string" },
-                  choices: { type: "array", minItems: 4, maxItems: 4, items: { type: "string" } },
-                  answer_index: { type: "integer", minimum: 0, maximum: 3 },
+                  choices: { type: "array", items: { type: "string" } },
+                  answer_index: { type: "integer" },
                   explanation: { type: "string" },
                 },
-                required: ["q", "choices", "answer_index", "explanation"],
               },
             },
-            revision: { type: "array", minItems: 3, maxItems: 5, items: { type: "string" } },
+            revision: { type: "array", items: { type: "string" } },
           },
-          required: [
-            "id", "title", "introduction", "definitions", "concepts", "examples", "diagrams",
-            "key_points", "tables", "formulas", "summary", "interview_qs", "mcqs", "revision",
-          ],
+          required: ["id", "title", "summary"],
         },
       },
       edges: {
@@ -613,11 +606,10 @@ const DeepNotesSchema = {
         items: {
           type: "object",
           properties: { from: { type: "string" }, to: { type: "string" } },
-          required: ["from", "to"],
         },
       },
     },
-    required: ["overview", "chapters", "edges"],
+    required: ["overview", "chapters"],
   },
 } as const;
 
