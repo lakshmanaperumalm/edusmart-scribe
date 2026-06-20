@@ -9,6 +9,8 @@ export async function openaiChat(opts: {
   model?: string;
   jsonSchema?: { name: string; schema: Record<string, unknown> };
   temperature?: number;
+  maxRetries?: number;
+  requestTimeoutMs?: number;
 }): Promise<string> {
   const key = process.env.LOVABLE_API_KEY;
   if (!key) throw new Error("LOVABLE_API_KEY is not configured");
@@ -26,18 +28,23 @@ export async function openaiChat(opts: {
   }
 
   const RETRYABLE_STATUSES = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
-  const MAX_RETRIES = 5;
+  const MAX_RETRIES = opts.maxRetries ?? 2;
+  const REQUEST_TIMEOUT_MS = opts.requestTimeoutMs ?? 24_000;
   let backoff = 1200;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     let res: Response;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
       res = await fetch(GATEWAY_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${key}`,
+          "Lovable-API-Key": key,
+          "X-Lovable-AIG-SDK": "tanstack-start-fetch",
         },
         body: JSON.stringify(body),
+        signal: controller.signal,
       });
     } catch (error) {
       console.error(`[ai-gateway] network error (attempt ${attempt + 1})`, error);
@@ -47,6 +54,8 @@ export async function openaiChat(opts: {
         continue;
       }
       throw new Error("AI service is temporarily unavailable. Please try again in a moment.");
+    } finally {
+      clearTimeout(timeout);
     }
 
     if (res.ok) {
@@ -80,12 +89,17 @@ export async function openaiJSON<T>(opts: {
   messages: ChatMsg[];
   schema: { name: string; schema: Record<string, unknown> };
   model?: string;
+  temperature?: number;
+  maxRetries?: number;
+  requestTimeoutMs?: number;
 }): Promise<T> {
   const text = await openaiChat({
     messages: opts.messages,
     model: opts.model,
     jsonSchema: opts.schema,
-    temperature: 0.7,
+    temperature: opts.temperature ?? 0.7,
+    maxRetries: opts.maxRetries,
+    requestTimeoutMs: opts.requestTimeoutMs,
   });
   try {
     return JSON.parse(text) as T;
