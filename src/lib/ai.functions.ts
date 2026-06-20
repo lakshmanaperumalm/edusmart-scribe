@@ -658,35 +658,38 @@ export const generateDeepNotes = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    await enforceAiRateLimit(userId, "deep_notes", { limit: 6, windowMinutes: 60 });
+    await enforceAiRateLimit(userId, "deep_notes", { limit: 20, windowMinutes: 60 });
     const language = data.language ?? "en";
 
     const draft = await openaiJSON<DeepNotesDraft>({
-      model: "google/gemini-2.5-flash",
+      model: "google/gemini-3-flash-preview",
       messages: [
         {
           role: "system",
           content:
             `You are an expert tutor creating a premium study guide that must finish quickly.
 Output language: ${language}. Level: ${data.level}.
-Return one focused JSON document with 3-4 essential chapters in a clear learning order.
-Keep explanations detailed but concise enough to finish in one fast response.
+Return one focused JSON document with exactly 2 essential chapters in a clear learning order.
+Keep explanations useful but compact enough to finish in under 20 seconds.
 Use plain text only. Never fabricate formulas, citations, statistics, or APIs.
 Diagrams are placeholders with caption + description only.
 Tables must have rows matching the number of headers.
 MCQs must always have exactly 4 choices and one correct answer.
-Prefer only the most useful fields for each chapter. Skip formulas, tables, diagrams, interview questions, or MCQs when they are not genuinely helpful.`,
+Prefer introduction, 2 concepts, 3 key points, summary, and 3 revision notes. Skip formulas, tables, diagrams, interview questions, and MCQs unless they are essential.`,
         },
         {
           role: "user",
           content:
-            `Topic: ${data.topic}\nCreate a study guide with a short overview and 3-4 chapters. For each chapter, prioritize introduction, concepts, key points, summary, and brief revision notes. Add definitions, examples, MCQs, interview questions, tables, formulas, or diagram placeholders only when clearly useful. Return JSON.`,
+            `Topic: ${data.topic}\nCreate a compact deep study guide with a short overview and exactly 2 chapters. For each chapter include introduction, 2 core concepts, 3 key points, summary, and 3 revision notes. Add at most 2 definitions and 1 example only when useful. Return JSON.`,
         },
       ],
       schema: DeepNotesSchema,
+      temperature: 0.35,
+      maxRetries: 1,
+      requestTimeoutMs: 18_000,
     });
 
-    const chapters = (Array.isArray(draft.chapters) ? draft.chapters : []).slice(0, 4).map((rawChapter, idx) => {
+    const chapters = (Array.isArray(draft.chapters) ? draft.chapters : []).slice(0, 2).map((rawChapter, idx) => {
       const definitions = Array.isArray(rawChapter?.definitions)
         ? rawChapter.definitions
             .map((d) => ({ term: asText(d?.term), definition: asText(d?.definition) }))
