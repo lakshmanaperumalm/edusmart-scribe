@@ -643,6 +643,16 @@ const asTextArray = (value: unknown, max: number) =>
     .map((item) => item.trim())
     .slice(0, max);
 
+function parseJsonObject<T>(text: string): T {
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    const match = text.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]) as T;
+    throw new Error("Failed to parse JSON from model");
+  }
+}
+
 export const generateDeepNotes = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: {
@@ -661,21 +671,20 @@ export const generateDeepNotes = createServerFn({ method: "POST" })
     await enforceAiRateLimit(userId, "deep_notes", { limit: 20, windowMinutes: 60 });
     const language = data.language ?? "en";
 
-    const draft = await openaiJSON<DeepNotesDraft>({
+    const draftText = await openaiChat({
       model: "google/gemini-3-flash-preview",
       messages: [
         {
           role: "system",
           content:
-            `You are an expert tutor creating a premium study guide that must finish quickly.
+            `Return only valid minified JSON. Do not use markdown fences or extra prose.
+JSON shape: {"overview":"string","chapters":[{"id":"s1","title":"string","introduction":"string","definitions":[{"term":"string","definition":"string"}],"concepts":[{"heading":"string","body":"string"}],"examples":[{"title":"string","body":"string"}],"diagrams":[],"key_points":["string"],"tables":[],"formulas":[],"summary":"string","interview_qs":[],"mcqs":[],"revision":["string"]}],"edges":[{"from":"s1","to":"s2"}]}.
+You are an expert tutor creating a premium study guide that must finish quickly.
 Output language: ${language}. Level: ${data.level}.
 Return one focused JSON document with exactly 2 essential chapters in a clear learning order.
 Keep explanations useful but compact enough to finish in under 20 seconds.
 Use plain text only. Never fabricate formulas, citations, statistics, or APIs.
-Diagrams are placeholders with caption + description only.
-Tables must have rows matching the number of headers.
-MCQs must always have exactly 4 choices and one correct answer.
-Prefer introduction, 2 concepts, 3 key points, summary, and 3 revision notes. Skip formulas, tables, diagrams, interview questions, and MCQs unless they are essential.`,
+Prefer introduction, 2 concepts, 3 key points, summary, and 3 revision notes. Keep diagrams, tables, formulas, interview_qs, and mcqs as empty arrays unless essential.`,
         },
         {
           role: "user",
@@ -683,11 +692,11 @@ Prefer introduction, 2 concepts, 3 key points, summary, and 3 revision notes. Sk
             `Topic: ${data.topic}\nCreate a compact deep study guide with a short overview and exactly 2 chapters. For each chapter include introduction, 2 core concepts, 3 key points, summary, and 3 revision notes. Add at most 2 definitions and 1 example only when useful. Return JSON.`,
         },
       ],
-      schema: DeepNotesSchema,
-      temperature: 0.35,
-      maxRetries: 1,
-      requestTimeoutMs: 18_000,
+      temperature: 0.25,
+      maxRetries: 0,
+      requestTimeoutMs: 28_000,
     });
+    const draft = parseJsonObject<DeepNotesDraft>(draftText);
 
     const chapters = (Array.isArray(draft.chapters) ? draft.chapters : []).slice(0, 2).map((rawChapter, idx) => {
       const definitions = Array.isArray(rawChapter?.definitions)
