@@ -93,8 +93,17 @@ export async function openaiJSON<T>(opts: {
   maxRetries?: number;
   requestTimeoutMs?: number;
 }): Promise<T> {
+  const messages = [...opts.messages];
+  // Ensure the word "json" appears so providers that require it accept json_object mode.
+  const hasJsonHint = messages.some((m) => /json/i.test(m.content));
+  if (!hasJsonHint) {
+    messages.unshift({
+      role: "system",
+      content: "Respond with a single valid JSON object only. No prose, no markdown fences.",
+    });
+  }
   const text = await openaiChat({
-    messages: opts.messages,
+    messages,
     model: opts.model,
     jsonSchema: opts.schema,
     temperature: opts.temperature ?? 0.7,
@@ -104,9 +113,9 @@ export async function openaiJSON<T>(opts: {
   try {
     return JSON.parse(text) as T;
   } catch {
-    // Try to recover JSON from inside fences
     const m = text.match(/\{[\s\S]*\}/);
     if (m) return JSON.parse(m[0]) as T;
     throw new Error("Failed to parse JSON from model");
   }
 }
+
