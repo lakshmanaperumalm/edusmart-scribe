@@ -681,24 +681,24 @@ export const generateDeepNotes = createServerFn({ method: "POST" })
 JSON shape: {"overview":"string","chapters":[{"id":"s1","title":"string","introduction":"string","definitions":[{"term":"string","definition":"string"}],"concepts":[{"heading":"string","body":"string"}],"examples":[{"title":"string","body":"string"}],"diagrams":[],"key_points":["string"],"tables":[],"formulas":[],"summary":"string","interview_qs":[],"mcqs":[],"revision":["string"]}],"edges":[{"from":"s1","to":"s2"}]}.
 You are an expert tutor creating a premium study guide that must finish quickly.
 Output language: ${language}. Level: ${data.level}.
-Return one focused JSON document with exactly 2 essential chapters in a clear learning order.
-Keep explanations useful but compact enough to finish in under 20 seconds.
+Return one focused JSON document with 8 to 10 essential chapters in a clear learning order.
+Keep explanations useful but concise so the whole response stays within the time budget.
 Use plain text only. Never fabricate formulas, citations, statistics, or APIs.
-Prefer introduction, 2 concepts, 3 key points, summary, and 3 revision notes. Keep diagrams, tables, formulas, interview_qs, and mcqs as empty arrays unless essential.`,
+For each chapter include introduction, 2-3 concepts, 3-4 key points, summary, and 3 revision notes. Keep diagrams, tables, formulas, interview_qs, and mcqs as empty arrays unless essential.`,
         },
         {
           role: "user",
           content:
-            `Topic: ${data.topic}\nCreate a compact deep study guide with a short overview and exactly 2 chapters. For each chapter include introduction, 2 core concepts, 3 key points, summary, and 3 revision notes. Add at most 2 definitions and 1 example only when useful. Return JSON.`,
+            `Topic: ${data.topic}\nCreate a deep study guide with a short overview and at least 8 chapters (up to 10) covering the topic end-to-end. For each chapter include introduction, 2-3 core concepts, 3-4 key points, summary, and 3 revision notes. Add at most 2 definitions and 1 example per chapter when useful. Return JSON.`,
         },
       ],
-      temperature: 0.25,
-      maxRetries: 0,
-      requestTimeoutMs: 28_000,
+      temperature: 0.3,
+      maxRetries: 1,
+      requestTimeoutMs: 55_000,
     });
     const draft = parseJsonObject<DeepNotesDraft>(draftText);
 
-    const chapters = (Array.isArray(draft.chapters) ? draft.chapters : []).slice(0, 2).map((rawChapter, idx) => {
+    const chapters = (Array.isArray(draft.chapters) ? draft.chapters : []).slice(0, 10).map((rawChapter, idx) => {
       const definitions = Array.isArray(rawChapter?.definitions)
         ? rawChapter.definitions
             .map((d) => ({ term: asText(d?.term), definition: asText(d?.definition) }))
