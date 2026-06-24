@@ -698,7 +698,7 @@ For each chapter include introduction, 2-3 concepts, 3-4 key points, summary, an
     });
     const draft = parseJsonObject<DeepNotesDraft>(draftText);
 
-    const chapters = (Array.isArray(draft.chapters) ? draft.chapters : []).slice(0, 2).map((rawChapter, idx) => {
+    const chapters = (Array.isArray(draft.chapters) ? draft.chapters : []).slice(0, 10).map((rawChapter, idx) => {
       const definitions = Array.isArray(rawChapter?.definitions)
         ? rawChapter.definitions
             .map((d) => ({ term: asText(d?.term), definition: asText(d?.definition) }))
