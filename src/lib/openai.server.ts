@@ -21,11 +21,11 @@ export async function openaiChat(opts: {
   };
   if (opts.temperature !== undefined) body.temperature = opts.temperature;
   if (opts.jsonSchema) {
-    body.response_format = {
-      type: "json_schema",
-      json_schema: { name: opts.jsonSchema.name, schema: opts.jsonSchema.schema, strict: false },
-    };
+    // Gemini rejects large json_schema constraints ("too many states"). Use the
+    // looser json_object mode and rely on prompt + parsing instead of strict schema.
+    body.response_format = { type: "json_object" };
   }
+
 
   const RETRYABLE_STATUSES = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
   const MAX_RETRIES = opts.maxRetries ?? 2;
