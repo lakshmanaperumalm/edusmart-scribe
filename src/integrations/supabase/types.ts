@@ -35,6 +35,42 @@ export type Database = {
         }
         Relationships: []
       }
+      audit_log: {
+        Row: {
+          action: string
+          actor_id: string | null
+          after_data: Json | null
+          before_data: Json | null
+          created_at: string
+          id: string
+          metadata: Json | null
+          table_name: string
+          target_row_id: string | null
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          after_data?: Json | null
+          before_data?: Json | null
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          table_name: string
+          target_row_id?: string | null
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          after_data?: Json | null
+          before_data?: Json | null
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          table_name?: string
+          target_row_id?: string | null
+        }
+        Relationships: []
+      }
       badges: {
         Row: {
           code: string
