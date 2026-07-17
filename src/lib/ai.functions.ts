@@ -860,7 +860,7 @@ Never fabricate specific dates, citations, statistics, or APIs. Use plain text. 
       topic: data.topic,
       level: data.level,
       language,
-      summary: asText(draft.overview, chapters[0]?.summary ?? ""),
+      summary: asText(plan.overview, chapters[0]?.summary ?? ""),
       content: chapters.map((c) => `# ${c.title}\n\n${c.summary}`).join("\n\n"),
       key_points: chapters.flatMap((c) => c.key_points).slice(0, 12),
       flashcards: chapters.flatMap((c) => c.interview_qs.map((qa) => ({ q: qa.q, a: qa.a }))).slice(0, 20),
