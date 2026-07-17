@@ -1,0 +1,2 @@
+DROP POLICY "users update own enrollment" ON public.enrollments;
+CREATE POLICY "users update own enrollment" ON public.enrollments FOR UPDATE USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
