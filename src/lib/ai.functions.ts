@@ -668,65 +668,112 @@ export const generateDeepNotes = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    await enforceAiRateLimit(userId, "deep_notes", { limit: 20, windowMinutes: 60 });
+    await enforceAiRateLimit(userId, "deep_notes", { limit: 10, windowMinutes: 60 });
     const language = data.language ?? "en";
 
-    const draftText = await openaiChat({
-      model: "google/gemini-3-flash-preview",
+    // ---- Phase 1: plan 12 chapter outlines ----
+    type PlanOutline = { id: string; title: string; brief: string };
+    type PlanResult = { overview: string; outlines: PlanOutline[]; edges?: { from: string; to: string }[] };
+
+    const planText = await openaiChat({
+      model: "google/gemini-2.5-flash",
       messages: [
         {
           role: "system",
-          content:
-            `Return only valid minified JSON. Do not use markdown fences or extra prose.
-JSON shape: {"overview":"string","chapters":[{"id":"s1","title":"string","introduction":"string","definitions":[{"term":"string","definition":"string"}],"concepts":[{"heading":"string","body":"string"}],"examples":[{"title":"string","body":"string"}],"diagrams":[],"key_points":["string"],"tables":[],"formulas":[],"summary":"string","interview_qs":[],"mcqs":[],"revision":["string"]}],"edges":[{"from":"s1","to":"s2"}]}.
-You are an expert tutor creating a premium study guide that must finish quickly.
-Output language: ${language}. Level: ${data.level}.
-Return one focused JSON document with 8 to 10 essential chapters in a clear learning order.
-Keep explanations useful but concise so the whole response stays within the time budget.
-Use plain text only. Never fabricate formulas, citations, statistics, or APIs.
-For each chapter include introduction, 2-3 concepts, 3-4 key points, summary, and 3 revision notes. Keep diagrams, tables, formulas, interview_qs, and mcqs as empty arrays unless essential.`,
+          content: `Return only valid minified JSON, no markdown fences.
+Shape: {"overview":"string (3-5 sentences)","outlines":[{"id":"s1","title":"string","brief":"one sentence describing what this chapter will cover"}],"edges":[{"from":"s1","to":"s2"}]}
+Language: ${language}. Level: ${data.level}.
+Plan EXACTLY 12 chapters that together deliver a comprehensive, textbook-quality study guide on the topic, ordered pedagogically from fundamentals to advanced applications. Include chapters on: introduction/context, foundational concepts, core theory, key techniques/methods, practical examples, common variants, real-world applications, comparisons/trade-offs, common pitfalls, advanced topics, current state/trends, and a wrap-up/further-study chapter.
+Use plain text only. Never fabricate facts.`,
         },
-        {
-          role: "user",
-          content:
-            `Topic: ${data.topic}\nCreate a deep study guide with a short overview and at least 8 chapters (up to 10) covering the topic end-to-end. For each chapter include introduction, 2-3 core concepts, 3-4 key points, summary, and 3 revision notes. Add at most 2 definitions and 1 example per chapter when useful. Return JSON.`,
-        },
+        { role: "user", content: `Topic: ${data.topic}\nPlan 12 chapters.` },
       ],
-      temperature: 0.3,
+      temperature: 0.4,
       maxRetries: 1,
-      requestTimeoutMs: 55_000,
+      requestTimeoutMs: 25_000,
     });
-    const draft = parseJsonObject<DeepNotesDraft>(draftText);
+    const plan = parseJsonObject<PlanResult>(planText);
+    const outlines = (Array.isArray(plan.outlines) ? plan.outlines : [])
+      .map((o, i) => ({
+        id: asText(o?.id, `s${i + 1}`) || `s${i + 1}`,
+        title: asText(o?.title, `Chapter ${i + 1}`),
+        brief: asText(o?.brief, ""),
+      }))
+      .filter((o) => o.title)
+      .slice(0, 12);
+    if (outlines.length < 4) throw new Error("Could not plan the study guide. Please try again.");
 
-    const chapters = (Array.isArray(draft.chapters) ? draft.chapters : []).slice(0, 10).map((rawChapter, idx) => {
+    // ---- Phase 2: expand chapters in parallel batches of 3 chapters/call ----
+    type ChapterBatch = { chapters: Chapter[] };
+    const groupSize = 3;
+    const groups: PlanOutline[][] = [];
+    for (let i = 0; i < outlines.length; i += groupSize) groups.push(outlines.slice(i, i + groupSize));
+
+    const chapterSystem = `Return only valid minified JSON, no markdown fences.
+Shape: {"chapters":[{"id":"string","title":"string","introduction":"3-4 substantial paragraphs (250-400 words) explaining background, motivation, and what will be learned","definitions":[{"term":"string","definition":"2-3 sentence definition"}],"concepts":[{"heading":"string","body":"2-3 paragraphs (150-250 words) of clear explanation with reasoning"}],"examples":[{"title":"string","body":"1-2 paragraphs walked-through example with steps"}],"diagrams":[{"caption":"string","description":"2-3 sentence description of what the diagram shows"}],"key_points":["6-8 substantial bullet points, each a full sentence"],"tables":[{"title":"string","headers":["string"],"rows":[["string"]]}],"formulas":[{"name":"string","formula":"string","explanation":"1-2 sentences"}],"summary":"2-3 paragraph chapter summary","interview_qs":[{"q":"string","a":"2-3 sentence answer"}],"mcqs":[{"q":"string","choices":["A","B","C","D"],"answer_index":0,"explanation":"1-2 sentences"}],"revision":["5-6 concise revision bullets"]}]}
+Language: ${language}. Level: ${data.level}.
+For EACH requested chapter produce RICH, textbook-quality content: aim for roughly 900-1400 words per chapter across all fields combined so the printed page count is generous. Include 3-4 definitions, 4-5 concepts, 2-3 examples, 1-2 diagrams (described), 6-8 key_points, at least 1 table when it clarifies (2-4 rows), 1-3 formulas ONLY if the topic involves math/science/engineering (otherwise leave empty), 3-4 interview_qs, 3 mcqs, 5-6 revision bullets.
+Never fabricate specific dates, citations, statistics, or APIs. Use plain text. Keep IDs exactly as given.`;
+
+    const runGroup = async (group: PlanOutline[]): Promise<Chapter[]> => {
+      const userMsg = `Topic: ${data.topic}\nExpand the following chapters with full rich content (preserve ids and titles):\n${JSON.stringify(group)}`;
+      const text = await openaiChat({
+        model: "google/gemini-2.5-flash",
+        messages: [
+          { role: "system", content: chapterSystem },
+          { role: "user", content: userMsg },
+        ],
+        temperature: 0.5,
+        maxRetries: 2,
+        requestTimeoutMs: 55_000,
+      });
+      const parsed = parseJsonObject<ChapterBatch>(text);
+      return Array.isArray(parsed.chapters) ? parsed.chapters : [];
+    };
+
+    // Concurrency: 2 groups at a time to stay under gateway rate limits.
+    const rawChapters: Chapter[] = [];
+    const concurrency = 2;
+    for (let i = 0; i < groups.length; i += concurrency) {
+      const slice = groups.slice(i, i + concurrency);
+      const results = await Promise.all(
+        slice.map((g) => runGroup(g).catch((err) => {
+          console.error("[deep-notes] group failed", err);
+          return [] as Chapter[];
+        })),
+      );
+      for (const r of results) rawChapters.push(...r);
+    }
+
+    const chapters = rawChapters.slice(0, 14).map((rawChapter, idx) => {
       const definitions = Array.isArray(rawChapter?.definitions)
         ? rawChapter.definitions
             .map((d) => ({ term: asText(d?.term), definition: asText(d?.definition) }))
             .filter((d) => d.term && d.definition)
-            .slice(0, 3)
+            .slice(0, 5)
         : [];
       const concepts = Array.isArray(rawChapter?.concepts)
         ? rawChapter.concepts
             .map((c) => ({ heading: asText(c?.heading), body: asText(c?.body) }))
             .filter((c) => c.heading && c.body)
-            .slice(0, 3)
+            .slice(0, 6)
         : [];
       const examples = Array.isArray(rawChapter?.examples)
         ? rawChapter.examples
             .map((e) => ({ title: asText(e?.title), body: asText(e?.body) }))
             .filter((e) => e.title && e.body)
-            .slice(0, 2)
+            .slice(0, 4)
         : [];
       const diagrams = Array.isArray(rawChapter?.diagrams)
         ? rawChapter.diagrams
             .map((d) => ({ caption: asText(d?.caption), description: asText(d?.description) }))
             .filter((d) => d.caption && d.description)
-            .slice(0, 1)
+            .slice(0, 3)
         : [];
       const tables = Array.isArray(rawChapter?.tables)
         ? rawChapter.tables
             .map((table) => {
-              const headers = asTextArray(table?.headers, 4);
+              const headers = asTextArray(table?.headers, 5);
               const rows = Array.isArray(table?.rows)
                 ? table.rows
                     .filter(Array.isArray)
@@ -736,24 +783,24 @@ For each chapter include introduction, 2-3 concepts, 3-4 key points, summary, an
                       return cells;
                     })
                     .filter((row) => row.some((cell) => cell.length > 0))
-                    .slice(0, 3)
+                    .slice(0, 6)
                 : [];
               return { title: asText(table?.title), headers, rows };
             })
             .filter((table) => table.title && table.headers.length >= 2 && table.rows.length > 0)
-            .slice(0, 1)
+            .slice(0, 2)
         : [];
       const formulas = Array.isArray(rawChapter?.formulas)
         ? rawChapter.formulas
             .map((f) => ({ name: asText(f?.name), formula: asText(f?.formula), explanation: asText(f?.explanation) }))
             .filter((f) => f.name && f.formula && f.explanation)
-            .slice(0, 2)
+            .slice(0, 4)
         : [];
       const interview_qs = Array.isArray(rawChapter?.interview_qs)
         ? rawChapter.interview_qs
             .map((qa) => ({ q: asText(qa?.q), a: asText(qa?.a) }))
             .filter((qa) => qa.q && qa.a)
-            .slice(0, 2)
+            .slice(0, 5)
         : [];
       const mcqs = Array.isArray(rawChapter?.mcqs)
         ? rawChapter.mcqs
@@ -771,7 +818,7 @@ For each chapter include introduction, 2-3 concepts, 3-4 key points, summary, an
               };
             })
             .filter((mcq) => mcq.q && mcq.explanation)
-            .slice(0, 2)
+            .slice(0, 4)
         : [];
 
       return {
@@ -782,24 +829,25 @@ For each chapter include introduction, 2-3 concepts, 3-4 key points, summary, an
         concepts,
         examples,
         diagrams,
-         key_points: asTextArray(rawChapter?.key_points, 4),
+        key_points: asTextArray(rawChapter?.key_points, 10),
         tables,
         formulas,
         summary: asText(rawChapter?.summary, asTextArray(rawChapter?.key_points, 3).join(" ") || "Summary unavailable."),
         interview_qs,
         mcqs,
-         revision: asTextArray(rawChapter?.revision, 4),
+        revision: asTextArray(rawChapter?.revision, 8),
       } satisfies Chapter;
     }).filter((chapter) => chapter.title && chapter.summary);
 
-    if (!chapters.length) {
+    if (chapters.length < 4) {
       throw new Error("Could not generate detailed notes. Please try again.");
     }
 
     const validIds = new Set(chapters.map((chapter) => chapter.id));
-    const edges = (Array.isArray(draft.edges) ? draft.edges : [])
+    const edges = (Array.isArray(plan.edges) ? plan.edges : [])
       .map((edge) => ({ from: asText(edge?.from), to: asText(edge?.to) }))
       .filter((edge) => edge.from !== edge.to && validIds.has(edge.from) && validIds.has(edge.to));
+
 
     const graph = {
       nodes: chapters.map((chapter) => ({ id: chapter.id, label: chapter.title })),
