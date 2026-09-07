@@ -763,7 +763,7 @@ Never fabricate specific dates, citations, statistics, or APIs. Use plain text. 
     }
 
 
-    const chapters = rawChapters.slice(0, 14).map((rawChapter, idx) => {
+    const chapters = rawChapters.slice(0, chapterTarget).map((rawChapter, idx) => {
       const definitions = Array.isArray(rawChapter?.definitions)
         ? rawChapter.definitions
             .map((d) => ({ term: asText(d?.term), definition: asText(d?.definition) }))
@@ -885,7 +885,7 @@ Never fabricate specific dates, citations, statistics, or APIs. Use plain text. 
       chapters,
       graph,
       toc,
-      meta: { pages_est: Math.max(50, chapters.length * 4 + 4), generated_at: new Date().toISOString(), model: "deep-v2" },
+      meta: { pages_est: Math.max(targetPages, chapters.length * 4 + 4), target_pages: targetPages, generated_at: new Date().toISOString(), model: "deep-v3" },
     }).select().single();
     if (error) { console.error("[deep-notes] db error", error); throw new Error("Could not save your notes. Please try again."); }
 
