@@ -1,20 +1,24 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { motion, AnimatePresence } from "framer-motion";
 import ReactFlow, { Background, Controls, type Node, type Edge } from "reactflow";
 import "reactflow/dist/style.css";
 import { generateDeepNotes } from "@/lib/ai.functions";
-import { buildNotesPdf, type DeepNote } from "@/lib/notes-pdf";
+import { buildNotesPdf, type DeepNote, type PdfOptions } from "@/lib/notes-pdf";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Sparkles, BookOpen, Download, Volume2, VolumeX, Plus, Search } from "lucide-react";
+import { Sparkles, BookOpen, Download, Volume2, VolumeX, Plus, Search, ArrowUp, ArrowDown, Trash2, ListOrdered, Settings2 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/notes")({ component: NotesPage });
 
@@ -55,10 +59,21 @@ function NotesPage() {
   const [topic, setTopic] = useState("");
   const [level, setLevel] = useState<"beginner" | "intermediate" | "advanced">("intermediate");
   const [language, setLanguage] = useState("en");
+  const [targetPages, setTargetPages] = useState(60);
+  const [customContent, setCustomContent] = useState("");
   const [active, setActive] = useState<Note | null>(null);
   const [search, setSearch] = useState("");
   const [stageIdx, setStageIdx] = useState(0);
   const [speakingIdx, setSpeakingIdx] = useState<number | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [layoutOpen, setLayoutOpen] = useState(false);
+  const [pdfOpts, setPdfOpts] = useState<Required<PdfOptions>>({
+    pageSize: "A4",
+    fontSize: 10,
+    margin: 50,
+    lineHeight: 1.3,
+    watermark: true,
+  });
   const fn = useServerFn(generateDeepNotes);
 
   const { data: notes } = useQuery({
@@ -81,7 +96,7 @@ function NotesPage() {
         setStageIdx((i) => (i < STAGES.length - 1 ? i + 1 : i));
       }, 4500);
       try {
-        return await fn({ data: { topic, level, language } });
+        return await fn({ data: { topic, level, language, targetPages, customContent } });
       } finally {
         clearInterval(interval);
       }
@@ -94,6 +109,32 @@ function NotesPage() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const saveChapters = useMutation({
+    mutationFn: async (chapters: Chapter[]) => {
+      if (!active) return;
+      const { error } = await supabase
+        .from("notes")
+        .update({
+          chapters: chapters as unknown as never,
+          toc: chapters.map((c) => ({ id: c.id, title: c.title })) as unknown as never,
+        })
+        .eq("id", active.id);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => {
+      toast.success("Chapters saved");
+      qc.invalidateQueries({ queryKey: ["notes", user?.id] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const applyChapters = (chapters: Chapter[]) => {
+    if (!active) return;
+    setActive({ ...active, chapters });
+    saveChapters.mutate(chapters);
+  };
+
 
   const filtered = useMemo(() => {
     if (!notes) return [];
@@ -126,7 +167,7 @@ function NotesPage() {
       return;
     }
     try {
-      buildNotesPdf(active);
+      buildNotesPdf(active, pdfOpts);
       toast.success("PDF downloaded");
     } catch (e) {
       console.error(e);
@@ -167,6 +208,30 @@ function NotesPage() {
                 </SelectContent>
               </Select>
             </div>
+          </div>
+          <div>
+            <div className="flex items-center justify-between">
+              <Label>Target pages</Label>
+              <span className="text-xs font-medium text-primary">{targetPages}</span>
+            </div>
+            <Slider
+              className="mt-3"
+              min={20}
+              max={150}
+              step={5}
+              value={[targetPages]}
+              onValueChange={(v) => setTargetPages(v[0])}
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">Longer targets take a little more time.</p>
+          </div>
+          <div>
+            <Label>Your own paragraphs / content (optional)</Label>
+            <Textarea
+              className="mt-1 h-28 text-xs"
+              placeholder="Paste the exact paragraphs, syllabus points or notes you want included…"
+              value={customContent}
+              onChange={(e) => setCustomContent(e.target.value)}
+            />
           </div>
           <Button
             className="w-full bg-gradient-hero text-primary-foreground shadow-glow"
@@ -220,9 +285,17 @@ function NotesPage() {
                   {active.level} · {(active.language ?? "en").toUpperCase()} · {active.chapters?.length ?? 0} chapters
                 </p>
               </div>
-              <Button onClick={downloadPdf} className="bg-primary text-primary-foreground shadow-glow">
-                <Download className="mr-2 h-4 w-4" /> Download PDF
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={() => setEditorOpen(true)}>
+                  <ListOrdered className="mr-2 h-4 w-4" /> Edit chapters
+                </Button>
+                <Button variant="outline" onClick={() => setLayoutOpen(true)}>
+                  <Settings2 className="mr-2 h-4 w-4" /> PDF layout
+                </Button>
+                <Button onClick={downloadPdf} className="bg-primary text-primary-foreground shadow-glow">
+                  <Download className="mr-2 h-4 w-4" /> Download PDF
+                </Button>
+              </div>
             </div>
 
             {active.summary && (
@@ -283,7 +356,187 @@ function NotesPage() {
           )}
         </div>
       </aside>
+
+      {active && (
+        <ChapterEditor
+          open={editorOpen}
+          onOpenChange={setEditorOpen}
+          chapters={active.chapters ?? []}
+          onSave={(next) => {
+            applyChapters(next);
+            setEditorOpen(false);
+          }}
+        />
+      )}
+
+      <LayoutDialog open={layoutOpen} onOpenChange={setLayoutOpen} value={pdfOpts} onChange={setPdfOpts} />
     </div>
+  );
+}
+
+function LayoutDialog({
+  open,
+  onOpenChange,
+  value,
+  onChange,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  value: Required<PdfOptions>;
+  onChange: (v: Required<PdfOptions>) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>PDF layout</DialogTitle></DialogHeader>
+        <div className="space-y-5">
+          <div>
+            <Label>Page size</Label>
+            <Select value={value.pageSize} onValueChange={(v) => onChange({ ...value, pageSize: v as "A4" | "LETTER" })}>
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="A4">A4</SelectItem>
+                <SelectItem value="LETTER">Letter</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <div className="flex items-center justify-between"><Label>Font size</Label><span className="text-xs text-primary">{value.fontSize}pt</span></div>
+            <Slider className="mt-3" min={8} max={14} step={1} value={[value.fontSize]} onValueChange={(v) => onChange({ ...value, fontSize: v[0] })} />
+          </div>
+          <div>
+            <div className="flex items-center justify-between"><Label>Margins</Label><span className="text-xs text-primary">{value.margin}pt</span></div>
+            <Slider className="mt-3" min={25} max={80} step={5} value={[value.margin]} onValueChange={(v) => onChange({ ...value, margin: v[0] })} />
+          </div>
+          <div>
+            <div className="flex items-center justify-between"><Label>Line spacing</Label><span className="text-xs text-primary">{value.lineHeight.toFixed(1)}</span></div>
+            <Slider className="mt-3" min={10} max={20} step={1} value={[Math.round(value.lineHeight * 10)]} onValueChange={(v) => onChange({ ...value, lineHeight: v[0] / 10 })} />
+          </div>
+          <div className="flex items-center justify-between">
+            <Label>Background watermark</Label>
+            <Switch checked={value.watermark} onCheckedChange={(c) => onChange({ ...value, watermark: c })} />
+          </div>
+        </div>
+        <DialogFooter><Button onClick={() => onOpenChange(false)}>Done</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const emptyChapter = (title: string, body: string): Chapter => ({
+  id: `custom-${Math.random().toString(36).slice(2, 8)}`,
+  title,
+  introduction: body,
+  definitions: [],
+  concepts: [],
+  examples: [],
+  diagrams: [],
+  key_points: [],
+  tables: [],
+  formulas: [],
+  summary: body.slice(0, 300),
+  interview_qs: [],
+  mcqs: [],
+  revision: [],
+});
+
+function ChapterEditor({
+  open,
+  onOpenChange,
+  chapters,
+  onSave,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  chapters: Chapter[];
+  onSave: (chapters: Chapter[]) => void;
+}) {
+  const [draft, setDraft] = useState<Chapter[]>(chapters);
+  const [newTitle, setNewTitle] = useState("");
+  const [newBody, setNewBody] = useState("");
+  const [openIdx, setOpenIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setDraft(chapters);
+      setOpenIdx(null);
+    }
+  }, [open, chapters]);
+
+  const move = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= draft.length) return;
+    const next = [...draft];
+    [next[i], next[j]] = [next[j], next[i]];
+    setDraft(next);
+    setOpenIdx(null);
+  };
+
+  const update = (i: number, patch: Partial<Chapter>) =>
+    setDraft(draft.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+        <DialogHeader><DialogTitle>Edit, reorder or replace chapters</DialogTitle></DialogHeader>
+
+        <div className="space-y-2">
+          {draft.map((c, i) => (
+            <div key={c.id ?? i} className="rounded-xl border border-border p-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">{i + 1}</span>
+                <Input value={c.title} onChange={(e) => update(i, { title: e.target.value })} className="h-8 flex-1 text-sm" />
+                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => move(i, -1)} aria-label="Move up"><ArrowUp className="h-4 w-4" /></Button>
+                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => move(i, 1)} aria-label="Move down"><ArrowDown className="h-4 w-4" /></Button>
+                <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => setDraft(draft.filter((_, idx) => idx !== i))} aria-label="Remove"><Trash2 className="h-4 w-4" /></Button>
+              </div>
+              <button className="mt-2 text-xs text-primary" onClick={() => setOpenIdx(openIdx === i ? null : i)}>
+                {openIdx === i ? "Hide content" : "Edit content"}
+              </button>
+              {openIdx === i && (
+                <div className="mt-2 space-y-2">
+                  <Label className="text-xs">Introduction / paragraphs</Label>
+                  <Textarea className="h-40 text-xs" value={c.introduction} onChange={(e) => update(i, { introduction: e.target.value })} />
+                  <Label className="text-xs">Summary</Label>
+                  <Textarea className="h-20 text-xs" value={c.summary} onChange={(e) => update(i, { summary: e.target.value })} />
+                  <Label className="text-xs">Key points (one per line)</Label>
+                  <Textarea
+                    className="h-24 text-xs"
+                    value={(c.key_points ?? []).join("\n")}
+                    onChange={(e) => update(i, { key_points: e.target.value.split("\n").filter(Boolean) })}
+                  />
+                </div>
+              )}
+            </div>
+          ))}
+          {!draft.length && <p className="text-sm text-muted-foreground">No chapters — add one below.</p>}
+        </div>
+
+        <div className="mt-4 rounded-xl border border-dashed border-border p-3">
+          <Label className="text-xs">Add your own chapter</Label>
+          <Input className="mt-1 h-8 text-sm" placeholder="Chapter title" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} />
+          <Textarea className="mt-2 h-28 text-xs" placeholder="Paste your paragraphs here…" value={newBody} onChange={(e) => setNewBody(e.target.value)} />
+          <Button
+            size="sm"
+            variant="outline"
+            className="mt-2"
+            disabled={!newTitle.trim() || !newBody.trim()}
+            onClick={() => {
+              setDraft([...draft, emptyChapter(newTitle.trim(), newBody.trim())]);
+              setNewTitle("");
+              setNewBody("");
+            }}
+          >
+            <Plus className="mr-2 h-3.5 w-3.5" /> Add chapter
+          </Button>
+        </div>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => onSave(draft)}>Save changes</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
