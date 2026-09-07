@@ -55,10 +55,21 @@ function NotesPage() {
   const [topic, setTopic] = useState("");
   const [level, setLevel] = useState<"beginner" | "intermediate" | "advanced">("intermediate");
   const [language, setLanguage] = useState("en");
+  const [targetPages, setTargetPages] = useState(60);
+  const [customContent, setCustomContent] = useState("");
   const [active, setActive] = useState<Note | null>(null);
   const [search, setSearch] = useState("");
   const [stageIdx, setStageIdx] = useState(0);
   const [speakingIdx, setSpeakingIdx] = useState<number | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [layoutOpen, setLayoutOpen] = useState(false);
+  const [pdfOpts, setPdfOpts] = useState<Required<PdfOptions>>({
+    pageSize: "A4",
+    fontSize: 10,
+    margin: 50,
+    lineHeight: 1.3,
+    watermark: true,
+  });
   const fn = useServerFn(generateDeepNotes);
 
   const { data: notes } = useQuery({
@@ -81,7 +92,7 @@ function NotesPage() {
         setStageIdx((i) => (i < STAGES.length - 1 ? i + 1 : i));
       }, 4500);
       try {
-        return await fn({ data: { topic, level, language } });
+        return await fn({ data: { topic, level, language, targetPages, customContent } });
       } finally {
         clearInterval(interval);
       }
@@ -94,6 +105,32 @@ function NotesPage() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const saveChapters = useMutation({
+    mutationFn: async (chapters: Chapter[]) => {
+      if (!active) return;
+      const { error } = await supabase
+        .from("notes")
+        .update({
+          chapters: chapters as unknown as never,
+          toc: chapters.map((c) => ({ id: c.id, title: c.title })) as unknown as never,
+        })
+        .eq("id", active.id);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => {
+      toast.success("Chapters saved");
+      qc.invalidateQueries({ queryKey: ["notes", user?.id] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const applyChapters = (chapters: Chapter[]) => {
+    if (!active) return;
+    setActive({ ...active, chapters });
+    saveChapters.mutate(chapters);
+  };
+
 
   const filtered = useMemo(() => {
     if (!notes) return [];
