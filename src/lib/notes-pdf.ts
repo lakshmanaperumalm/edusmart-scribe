@@ -117,7 +117,20 @@ function diagramPlaceholder(caption: string, description: string): Content {
   };
 }
 
-export function buildNotesPdf(note: DeepNote): void {
+export type PdfOptions = {
+  pageSize?: "A4" | "LETTER";
+  fontSize?: number;
+  margin?: number;
+  lineHeight?: number;
+  watermark?: boolean;
+};
+
+export function buildNotesPdf(note: DeepNote, options: PdfOptions = {}): void {
+  const pageSize = options.pageSize ?? "A4";
+  const baseFont = options.fontSize ?? 10;
+  const margin = options.margin ?? 50;
+  const lineHeight = options.lineHeight ?? 1.3;
+  const showWatermark = options.watermark !== false;
   const today = new Date(note.created_at).toLocaleDateString(undefined, {
     year: "numeric", month: "long", day: "numeric",
   });
@@ -257,11 +270,11 @@ export function buildNotesPdf(note: DeepNote): void {
   });
 
   const docDefinition: TDocumentDefinitions = {
-    pageSize: "A4",
-    pageMargins: [50, 70, 50, 60],
+    pageSize,
+    pageMargins: [margin, margin + 20, margin, margin + 10],
     info: { title: `${note.topic} — RAW Study Guide`, author: "RAW AI Tutor" },
     background: (currentPage: number) => {
-      if (currentPage === 1) return [];
+      if (currentPage === 1 || !showWatermark) return [];
       // Watermark on content pages
       return [
         {
@@ -278,23 +291,23 @@ export function buildNotesPdf(note: DeepNote): void {
       if (currentPage === 1) return "";
       return {
         columns: [
-          { text: "RAW · AI Personal Tutor", color: MUTED, fontSize: 9, margin: [50, 30, 0, 0] },
-          { text: note.topic, color: BRAND_DARK, bold: true, fontSize: 9, alignment: "right", margin: [0, 30, 50, 0] },
+          { text: "RAW · AI Personal Tutor", color: MUTED, fontSize: 9, margin: [margin, margin - 20, 0, 0] },
+          { text: note.topic, color: BRAND_DARK, bold: true, fontSize: 9, alignment: "right", margin: [0, margin - 20, margin, 0] },
         ],
       };
     },
     footer: (currentPage: number, pageCount: number) => ({
       columns: [
-        { text: `Generated ${today}`, color: MUTED, fontSize: 8, margin: [50, 20, 0, 0] },
-        { text: `Page ${currentPage} of ${pageCount}`, color: MUTED, fontSize: 8, alignment: "right", margin: [0, 20, 50, 0] },
+        { text: `Generated ${today}`, color: MUTED, fontSize: 8, margin: [margin, 20, 0, 0] },
+        { text: `Page ${currentPage} of ${pageCount}`, color: MUTED, fontSize: 8, alignment: "right", margin: [0, 20, margin, 0] },
       ],
     }),
     content,
     styles: {
-      h1: { fontSize: 20, bold: true, color: BRAND_DARK, margin: [0, 18, 0, 8] },
-      h2: { fontSize: 13, bold: true, color: BRAND, margin: [0, 10, 0, 4] },
+      h1: { fontSize: baseFont + 10, bold: true, color: BRAND_DARK, margin: [0, 18, 0, 8] },
+      h2: { fontSize: baseFont + 3, bold: true, color: BRAND, margin: [0, 10, 0, 4] },
     },
-    defaultStyle: { fontSize: 10, color: "#111827", lineHeight: 1.3 },
+    defaultStyle: { fontSize: baseFont, color: "#111827", lineHeight },
   };
 
   const filename = `${note.topic.replace(/[^a-z0-9-_ ]/gi, "").trim() || "notes"}.pdf`;
