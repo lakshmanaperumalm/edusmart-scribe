@@ -659,19 +659,36 @@ export const generateDeepNotes = createServerFn({ method: "POST" })
     topic: string;
     level: "beginner" | "intermediate" | "advanced";
     language?: string;
+    targetPages?: number;
+    customContent?: string;
   }) =>
     z.object({
       topic: z.string().min(2).max(200),
       level: z.enum(["beginner", "intermediate", "advanced"]),
       language: z.string().min(2).max(20).default("en"),
+      targetPages: z.number().int().min(20).max(150).default(60),
+      customContent: z.string().max(12000).default(""),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     await enforceAiRateLimit(userId, "deep_notes", { limit: 10, windowMinutes: 60 });
     const language = data.language ?? "en";
+    const targetPages = data.targetPages ?? 60;
+    const custom = (data.customContent ?? "").trim();
 
-    // ---- Phase 1: plan 12 chapter outlines ----
+    // ~4 printed pages per chapter, clamped for latency.
+    const chapterTarget = Math.min(20, Math.max(8, Math.round(targetPages / 4)));
+    const wordsPerChapter = Math.min(
+      1800,
+      Math.max(800, Math.round((targetPages * 400) / chapterTarget)),
+    );
+
+    const customBlock = custom
+      ? `\n\nThe student supplied their own material below. Treat it as authoritative: build the outline around it, keep their wording/paragraphs where sensible, and expand around them. Never contradict it.\n---\n${custom}\n---`
+      : "";
+
+    // ---- Phase 1: plan chapter outlines ----
     type PlanOutline = { id: string; title: string; brief: string };
     type PlanResult = { overview: string; outlines: PlanOutline[]; edges?: { from: string; to: string }[] };
 
@@ -683,10 +700,10 @@ export const generateDeepNotes = createServerFn({ method: "POST" })
           content: `Return only valid minified JSON, no markdown fences.
 Shape: {"overview":"string (3-5 sentences)","outlines":[{"id":"s1","title":"string","brief":"one sentence describing what this chapter will cover"}],"edges":[{"from":"s1","to":"s2"}]}
 Language: ${language}. Level: ${data.level}.
-Plan EXACTLY 12 chapters that together deliver a comprehensive, textbook-quality study guide on the topic, ordered pedagogically from fundamentals to advanced applications. Include chapters on: introduction/context, foundational concepts, core theory, key techniques/methods, practical examples, common variants, real-world applications, comparisons/trade-offs, common pitfalls, advanced topics, current state/trends, and a wrap-up/further-study chapter.
-Use plain text only. Never fabricate facts.`,
+Plan EXACTLY ${chapterTarget} chapters that together deliver a comprehensive, textbook-quality study guide on the topic (target length: ${targetPages} printed pages), ordered pedagogically from fundamentals to advanced applications. Cover: introduction/context, foundational concepts, core theory, key techniques/methods, practical examples, variants, real-world applications, comparisons/trade-offs, common pitfalls, advanced topics, current state/trends, and a wrap-up/further-study chapter.
+Use plain text only. Never fabricate facts.${customBlock}`,
         },
-        { role: "user", content: `Topic: ${data.topic}\nPlan 12 chapters.` },
+        { role: "user", content: `Topic: ${data.topic}\nPlan ${chapterTarget} chapters.` },
       ],
       temperature: 0.4,
       maxRetries: 1,
@@ -700,20 +717,20 @@ Use plain text only. Never fabricate facts.`,
         brief: asText(o?.brief, ""),
       }))
       .filter((o) => o.title)
-      .slice(0, 12);
+      .slice(0, chapterTarget);
     if (outlines.length < 4) throw new Error("Could not plan the study guide. Please try again.");
 
-    // ---- Phase 2: expand chapters in parallel batches of 3 chapters/call ----
+    // ---- Phase 2: expand chapters in parallel batches ----
     type ChapterBatch = { chapters: Chapter[] };
-    const groupSize = 3;
+    const groupSize = 2;
     const groups: PlanOutline[][] = [];
     for (let i = 0; i < outlines.length; i += groupSize) groups.push(outlines.slice(i, i + groupSize));
 
     const chapterSystem = `Return only valid minified JSON, no markdown fences.
-Shape: {"chapters":[{"id":"string","title":"string","introduction":"3-4 substantial paragraphs (250-400 words) explaining background, motivation, and what will be learned","definitions":[{"term":"string","definition":"2-3 sentence definition"}],"concepts":[{"heading":"string","body":"2-3 paragraphs (150-250 words) of clear explanation with reasoning"}],"examples":[{"title":"string","body":"1-2 paragraphs walked-through example with steps"}],"diagrams":[{"caption":"string","description":"2-3 sentence description of what the diagram shows"}],"key_points":["6-8 substantial bullet points, each a full sentence"],"tables":[{"title":"string","headers":["string"],"rows":[["string"]]}],"formulas":[{"name":"string","formula":"string","explanation":"1-2 sentences"}],"summary":"2-3 paragraph chapter summary","interview_qs":[{"q":"string","a":"2-3 sentence answer"}],"mcqs":[{"q":"string","choices":["A","B","C","D"],"answer_index":0,"explanation":"1-2 sentences"}],"revision":["5-6 concise revision bullets"]}]}
+Shape: {"chapters":[{"id":"string","title":"string","introduction":"3-4 substantial paragraphs explaining background, motivation, and what will be learned","definitions":[{"term":"string","definition":"2-3 sentence definition"}],"concepts":[{"heading":"string","body":"2-3 paragraphs (200-300 words) of clear explanation with reasoning"}],"examples":[{"title":"string","body":"1-2 paragraphs walked-through example with steps"}],"diagrams":[{"caption":"string","description":"2-3 sentence description of what the diagram shows"}],"key_points":["6-8 substantial bullet points, each a full sentence"],"tables":[{"title":"string","headers":["string"],"rows":[["string"]]}],"formulas":[{"name":"string","formula":"string","explanation":"1-2 sentences"}],"summary":"2-3 paragraph chapter summary","interview_qs":[{"q":"string","a":"2-3 sentence answer"}],"mcqs":[{"q":"string","choices":["A","B","C","D"],"answer_index":0,"explanation":"1-2 sentences"}],"revision":["5-6 concise revision bullets"]}]}
 Language: ${language}. Level: ${data.level}.
-For EACH requested chapter produce RICH, textbook-quality content: aim for roughly 900-1400 words per chapter across all fields combined so the printed page count is generous. Include 3-4 definitions, 4-5 concepts, 2-3 examples, 1-2 diagrams (described), 6-8 key_points, at least 1 table when it clarifies (2-4 rows), 1-3 formulas ONLY if the topic involves math/science/engineering (otherwise leave empty), 3-4 interview_qs, 3 mcqs, 5-6 revision bullets.
-Never fabricate specific dates, citations, statistics, or APIs. Use plain text. Keep IDs exactly as given.`;
+For EACH requested chapter produce RICH, textbook-quality content: aim for roughly ${wordsPerChapter} words per chapter across all fields combined so the printed page count reaches the target. Include 3-5 definitions, 5-6 concepts, 2-3 examples, 1-2 diagrams (described), 6-8 key_points, at least 1 table when it clarifies (2-4 rows), 1-3 formulas ONLY if the topic involves math/science/engineering (otherwise leave empty), 3-4 interview_qs, 3 mcqs, 5-6 revision bullets.
+Never fabricate specific dates, citations, statistics, or APIs. Use plain text. Keep IDs exactly as given.${customBlock}`;
 
     const runGroup = async (group: PlanOutline[]): Promise<Chapter[]> => {
       const userMsg = `Topic: ${data.topic}\nExpand the following chapters with full rich content (preserve ids and titles):\n${JSON.stringify(group)}`;
@@ -731,9 +748,9 @@ Never fabricate specific dates, citations, statistics, or APIs. Use plain text. 
       return Array.isArray(parsed.chapters) ? parsed.chapters : [];
     };
 
-    // Concurrency: 2 groups at a time to stay under gateway rate limits.
+    // Run all groups in parallel (bounded) so wall time stays within limits.
     const rawChapters: Chapter[] = [];
-    const concurrency = 2;
+    const concurrency = 5;
     for (let i = 0; i < groups.length; i += concurrency) {
       const slice = groups.slice(i, i + concurrency);
       const results = await Promise.all(
@@ -744,6 +761,7 @@ Never fabricate specific dates, citations, statistics, or APIs. Use plain text. 
       );
       for (const r of results) rawChapters.push(...r);
     }
+
 
     const chapters = rawChapters.slice(0, 14).map((rawChapter, idx) => {
       const definitions = Array.isArray(rawChapter?.definitions)
